@@ -1,0 +1,5 @@
+# Linux serverda (Railway/Render) shell orqali ishga tushiriladigan fayllar
+# HAR DOIM LF qator tugashi bilan saqlansin. CRLF bo'lsa Linux'da "\r" xatosi
+# chiqadi va gunicorn $PORT binding buziladi.
+Procfile text eol=lf
+*.sh text eol=lf
