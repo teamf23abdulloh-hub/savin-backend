@@ -1,0 +1,44 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Render dashboardida "New +" -> "Blueprint" -> shu repo'ni tanlang.
+# Yoki qo'lda "Web Service" yaratayotgan bo'lsangiz quyidagilarni kiriting:
+#   Runtime:        Python
+#   Build Command:  ./build.sh
+#   Start Command:  gunicorn config.wsgi:application
+# va pastdagi envVars'larni Environment bo'limiga qo'shing.
+#
+# DIQQAT: bu YAGONA backend — admin paneli, biznes/kassir panellari, landing
+# va mobil ilova hammasi shu bitta servisdan foydalanadi. Avvalgidek ikkita
+# alohida servis (savin_django + savin-backend) kerak emas.
+
+databases:
+  - name: savin-db
+    plan: free
+
+services:
+  - type: web
+    name: savin-backend
+    runtime: python
+    plan: free
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn config.wsgi:application"
+    healthCheckPath: /api/v1/health/
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: savin-db
+          property: connectionString
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_ALLOWED_HOSTS
+        value: ".onrender.com"
+      - key: PYTHON_VERSION
+        value: "3.13.4"
+      # Frontendlar alohida domenda tursa, ularning to'liq manzillarini
+      # vergul bilan ajratib kiriting, masalan:
+      #   https://savin-web.onrender.com,https://savin-admin.onrender.com
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: CSRF_TRUSTED_ORIGINS
+        sync: false
