@@ -108,15 +108,28 @@ class Command(BaseCommand):
         parser.add_argument("--transactions", type=int, default=400)
         parser.add_argument("--seed", type=int, default=42, help="Random urug'i (takrorlanuvchanlik uchun).")
 
-    @db_transaction.atomic
     def handle(self, *args, **opts):
         random.seed(opts["seed"])
-        now = timezone.now()
 
+        # flush ATOMIC blokidan TASHQARIDA bo'lishi kerak (Postgres'da flush o'z
+        # tranzaksiyasini boshqaradi).
         if opts["fresh"]:
             self.stdout.write(self.style.WARNING("!  Barcha ma'lumot o'chirilyapti (flush)..."))
             call_command("flush", "--noinput")
             self.stdout.write(self.style.SUCCESS("OK Baza tozalandi."))
+        elif Business.objects.exists():
+            # Idempotent: ma'lumot bo'lsa qayta yaratmaydi (deploy'da avtoseed uchun xavfsiz).
+            self.stdout.write(self.style.WARNING(
+                "Ma'lumot allaqachon mavjud — seed o'tkazib yuborildi "
+                "(qayta to'ldirish uchun: seed_fake --fresh)."
+            ))
+            return
+
+        self._seed(opts)
+
+    @db_transaction.atomic
+    def _seed(self, opts):
+        now = timezone.now()
 
         # ---- Admin operator ----
         admin, created = AdminUser.objects.get_or_create(
@@ -387,10 +400,10 @@ class Command(BaseCommand):
                     dau=dau, mau=dau * random.randint(4, 7),
                     new_users=random.randint(3, 25), new_businesses=random.randint(0, 3),
                     downloads_count=downloads, paid_count=paid,
-                    conversion_rate=Decimal(round(paid / downloads * 100, 2)),
+                    conversion_rate=Decimal(str(round(paid / downloads * 100, 2))),
                     total_discount_amount=Decimal(random.randrange(500000, 5000000, 10000)),
                     churned_users=random.randint(0, 8),
-                    churn_rate=Decimal(round(random.uniform(0.5, 5.0), 2)),
+                    churn_rate=Decimal(str(round(random.uniform(0.5, 5.0), 2))),
                 ),
             )
             for cat in random.sample(categories, 4):
