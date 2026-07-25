@@ -207,11 +207,15 @@ CSRF_TRUSTED_ORIGINS = [
 # shu header orqali bildiradi.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-# Production'da (DEBUG=False) HTTPS majburiy va cookie'lar faqat shifrlangan
-# ulanish orqali yuboriladi. Lokal devda o'chiq — aks holda http://localhost
-# ochilmay qolardi.
+# Production'da (DEBUG=False) cookie'lar faqat shifrlangan ulanish orqali
+# yuboriladi va xavfsizlik header'lari yoqiladi.
 if not DEBUG:
-    SECURE_SSL_REDIRECT = True
+    # DIQQAT: SECURE_SSL_REDIRECT standart holatda O'CHIQ. Railway/Render kabi
+    # platformalar HTTPS'ni allaqachon chetda (edge) majburlaydi, va Django
+    # darajasidagi redirect ularning ICHKI healthcheck'ini buzadi — healthcheck
+    # HTTP orqali kelib 301 redirect oladi, natijada deploy "healthcheck failed"
+    # bilan yiqiladi. Kerak bo'lsa SECURE_SSL_REDIRECT=True bilan yoqsa bo'ladi.
+    SECURE_SSL_REDIRECT = os.environ.get("SECURE_SSL_REDIRECT", "False") == "True"
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = 31536000  # 1 yil
