@@ -46,7 +46,17 @@ if not DEBUG and SECRET_KEY == _INSECURE_KEY:
         "tasodifiy maxfiy kalit majburiy (Render: Environment -> Generate)."
     )
 
-ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",") if h.strip()]
+
+# Railway'da ishlaganda uning public domeni va ICHKI healthcheck host'ini
+# (healthcheck.railway.app) har doim ruxsat etamiz. Aks holda, agar
+# DJANGO_ALLOWED_HOSTS aniq domenga qo'yilgan bo'lsa, Railway'ning ichki
+# healthcheck so'rovi "DisallowedHost" (400) olib, deploy yiqilardi.
+_railway_public = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+if _railway_public or os.environ.get("RAILWAY_ENVIRONMENT_NAME"):
+    for _h in ("healthcheck.railway.app", ".railway.app", _railway_public):
+        if _h and _h not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(_h)
 
 
 # Application definition
