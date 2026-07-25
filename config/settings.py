@@ -124,14 +124,32 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 
 
-# Lokal dev: SQLite. Render/production: DATABASE_URL env o'rnatilsa o'sha
-# ishlatiladi (Render'da SQLite ishlatib bo'lmaydi — har deploy'da disk tozalanadi).
+# Lokal dev: SQLite. Production: DATABASE_URL env o'rnatilsa o'sha ishlatiladi
+# (PaaS'da SQLite ishlatib bo'lmaydi — har deploy'da disk tozalanadi).
+#
+# DIQQAT: DATABASE_URL BO'SH satr bo'lsa (Railway'da service-reference noto'g'ri
+# ulanganda shunday bo'ladi), avvalgi `dj_database_url.config()` bo'sh
+# konfiguratsiya qaytarib "supply the ENGINE value" xatosini berardi va migrate
+# yiqilardi. Shu sabab bo'sh/bo'shliqdan iborat qiymatni "o'rnatilmagan" deb
+# qaraymiz va SQLite'ga qaytamiz (ilova hech bo'lmaganda ishga tushadi).
+_db_url = os.environ.get("DATABASE_URL", "").strip()
 DATABASES = {
-    'default': dj_database_url.config(
-        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+    "default": dj_database_url.parse(
+        _db_url or f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
         conn_max_age=600,
     )
 }
+
+# Production'da haqiqiy DATABASE_URL yo'q bo'lsa — ogohlantiramiz. SQLite
+# PaaS'da vaqtinchalik (har redeploy'da o'chadi), shuning uchun Postgres
+# ulanishi SHART.
+if not DEBUG and not _db_url:
+    import logging
+    logging.getLogger(__name__).warning(
+        "DATABASE_URL o'rnatilmagan! Vaqtinchalik SQLite ishlatilmoqda — "
+        "ma'lumot har redeploy'da o'chadi. Railway'da Postgres'ni ulang: "
+        "DATABASE_URL = ${{savin-db.DATABASE_URL}}"
+    )
 
 AUTH_USER_MODEL = 'users.User'
 
