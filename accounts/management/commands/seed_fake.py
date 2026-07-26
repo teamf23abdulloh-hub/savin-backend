@@ -434,6 +434,14 @@ class Command(BaseCommand):
                 ))
         DailyTransactionStat.objects.bulk_create(biz_stat_objs)
 
+        # ---- ADMIN PANEL (core app) — saven-admin AYNAN shulardan o'qiydi ----
+        core_counts = self._seed_core(now)
+        self.stdout.write(
+            f"Admin (core): Member={core_counts['members']} Business={core_counts['businesses']} "
+            f"Tranzaksiya={core_counts['transactions']} To'lov={core_counts['payments']} "
+            f"Ariza={core_counts['applications']}"
+        )
+
         # ---- Xulosa ----
         line = "=" * 54
         self.stdout.write(self.style.SUCCESS(line))
@@ -447,7 +455,151 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(f"  Barcha soxta userlar paroli: demo12345"))
         self.stdout.write(self.style.SUCCESS(line))
         self.stdout.write(self.style.SUCCESS(
-            f"  Bizneslar={len(businesses)}  Mijozlar={len(customers)}  "
+            f"  [biznes/kassir] Bizneslar={len(businesses)}  Mijozlar={len(customers)}  "
             f"Tranzaksiya={len(tx_objs)}  To'lov={len(pay_objs)}"
         ))
+        self.stdout.write(self.style.SUCCESS(
+            f"  [admin panel]   Member={core_counts['members']}  Business={core_counts['businesses']}  "
+            f"Tranzaksiya={core_counts['transactions']}  To'lov={core_counts['payments']}"
+        ))
         self.stdout.write(self.style.SUCCESS(line))
+
+    def _seed_core(self, now):
+        """Admin panel (core app) modellarini to'ldiradi — saven-admin shulardan o'qiydi.
+
+        core.* modellari biznes/kassir panelidagi `businesses.*`/`users.*` dan
+        BUTUNLAY alohida (admin avval alohida backend edi). Shuning uchun admin
+        panelda ma'lumot ko'rinishi uchun ayni shu jadvallar to'ldirilishi shart.
+        """
+        from core import models as cm
+
+        today = now.date()
+        cities = ["Toshkent shahri", "Samarqand", "Buxoro", "Andijon", "Farg'ona", "Namangan"]
+        cats = [c.value for c in cm.BusinessCategory]
+        btypes = [t.value for t in cm.BusinessType]
+
+        # Funnel (singleton) — dashboard "downloads" va konversiya uchun
+        cm.PlatformStat.objects.create(downloads=5200, registrations=3400, payment_page_opens=1900)
+
+        # A'zolar (Foydalanuvchilar)
+        member_statuses = [cm.Status.PREMIUM, cm.Status.PREMIUM, cm.Status.NEW, cm.Status.TRIAL, cm.Status.OVERDUE]
+        members = []
+        for i in range(35):
+            joined = today - timedelta(days=random.randint(0, 60))
+            st = random.choice(member_statuses)
+            members.append(cm.Member(
+                member_code=f"{100000000 + i}",
+                name=rand_name(), phone=rand_phone(), city=random.choice(cities),
+                status=st,
+                activity_status=random.choice([cm.ActivityStatus.ACTIVE, cm.ActivityStatus.ACTIVE,
+                                                cm.ActivityStatus.NEW, cm.ActivityStatus.INACTIVE]),
+                joined_at=joined,
+                savings_total=Decimal(random.randrange(0, 2000000, 10000)),
+                membership_start=joined if st == cm.Status.PREMIUM else None,
+                membership_end=(joined + timedelta(days=365)) if st == cm.Status.PREMIUM else None,
+                months_subscribed=random.randint(0, 12),
+                device=random.choice(["iPhone 14 · iOS 17.2", "Samsung S23 · Android 14", "Redmi Note 12"]),
+                referral_code=f"REF{1000 + i}", referral_invited=random.randint(0, 3),
+            ))
+        cm.Member.objects.bulk_create(members)
+        members = list(cm.Member.objects.all())
+
+        # Bizneslar (core) — ko'pchiligi "Tasdiqlangan" (dashboard active_businesses uchun)
+        biz_statuses = [cm.BusinessStatus.APPROVED] * 5 + [cm.BusinessStatus.PENDING, cm.BusinessStatus.REJECTED]
+        core_bizzes = []
+        for i in range(12):
+            submitted = today - timedelta(days=random.randint(5, 120))
+            st = random.choice(biz_statuses)
+            core_bizzes.append(cm.Business(
+                business_code=f"{200000000 + i}",
+                name=f"{random.choice(BUSINESS_PREFIXES)} {random.choice(cats)}",
+                category=random.choice(cats), business_type=random.choice(btypes),
+                owner=rand_name(), phone=rand_phone(), email=f"biz{i}@savin.uz",
+                region=random.choice(cities), district="Chilonzor tumani",
+                address="Bunyodkor ko'chasi, 12",
+                discount_percent=random.choice([5, 10, 15, 20, 25]),
+                min_purchase=Decimal(random.randrange(0, 200000, 10000)),
+                login=f"biz{i}", password="demo12345",
+                status=st, submitted_at=submitted,
+                registered_at=(submitted + timedelta(days=3)) if st == cm.BusinessStatus.APPROVED else None,
+            ))
+        cm.Business.objects.bulk_create(core_bizzes)
+        core_bizzes = list(cm.Business.objects.all())
+        approved = [b for b in core_bizzes if b.status == cm.BusinessStatus.APPROVED] or core_bizzes
+
+        # Biznes tranzaksiyalari
+        txs = []
+        for _ in range(220):
+            b = random.choice(approved)
+            m = random.choice(members)
+            orig = Decimal(random.randrange(30000, 600000, 5000))
+            perc = random.choice([5, 10, 15, 20])
+            final = orig - (orig * perc // 100)
+            txs.append(cm.BusinessTransaction(
+                business=b, member=m, member_name=m.name, cashier=rand_name(),
+                original_amount=orig, final_amount=final,
+                status=random.choice([cm.TransactionStatus.SUCCESS] * 6 + [cm.TransactionStatus.CANCELLED]),
+                created_at=now - timedelta(days=random.randint(0, 60), hours=random.randint(0, 23)),
+            ))
+        cm.BusinessTransaction.objects.bulk_create(txs)
+
+        # Arizalar (landing'dan kelgan hamkorlik so'rovlari)
+        app_statuses = [cm.ApplicationStatus.NEW, cm.ApplicationStatus.NEW, cm.ApplicationStatus.REVIEWING,
+                        cm.ApplicationStatus.CONTACTED, cm.ApplicationStatus.APPROVED, cm.ApplicationStatus.REJECTED]
+        apps = []
+        for i in range(10):
+            apps.append(cm.BusinessApplication(
+                business_name=f"{random.choice(BUSINESS_PREFIXES)} {random.choice(cats)}",
+                category=random.choice(cats), phone=rand_phone(),
+                region=random.choice(cities), discount_percent=random.choice([10, 15, 20]),
+                status=random.choice(app_statuses),
+                created_at=now - timedelta(days=random.randint(0, 30)),
+                responsible_name=rand_name(), business_type=random.choice(btypes),
+                email=f"apply{i}@savin.uz",
+            ))
+        cm.BusinessApplication.objects.bulk_create(apps)
+
+        # To'lovlar (obuna) — oxirgi 6 oyga taqsimlangan (oylik daromad grafigi uchun)
+        methods = [m.value for m in cm.PaymentMethod]
+        pay_statuses = [cm.PaymentStatus.SUCCESS] * 7 + [cm.PaymentStatus.PENDING, cm.PaymentStatus.REFUNDED]
+        pays = []
+        for i in range(160):
+            m = random.choice(members)
+            months = random.choice([1, 1, 1, 3, 6, 12])
+            pays.append(cm.Payment(
+                txn_id=f"TXN{1000000 + i}", member=m, user_display_name=m.name,
+                months=months, amount=Decimal(months * 19000),
+                method=random.choice(methods), status=random.choice(pay_statuses),
+                psp_ref=f"REF-{random.randint(10000000, 99999999)}",
+                created_at=now - timedelta(days=random.randint(0, 180), hours=random.randint(0, 23)),
+            ))
+        cm.Payment.objects.bulk_create(pays)
+
+        # Bildirishnomalar
+        for i in range(6):
+            cm.Notification.objects.create(
+                title=f"Aksiya #{i + 1}", body="Savin bilan yangi chegirmalarni kashf eting!",
+                audience_type=random.choice([cm.AudienceType.ALL, cm.AudienceType.PREMIUM]),
+                delivered=random.randint(500, 3000), opened=random.randint(100, 1500),
+            )
+
+        # Kunlik faollik (60 kun) — faollik grafiklari uchun
+        acts = [cm.DailyActivity(
+            date=today - timedelta(days=d),
+            daily_active=random.randint(80, 400),
+            qr_scans=random.randint(50, 600),
+            peak_hour=random.choice([12, 13, 18, 19, 20]),
+        ) for d in range(60)]
+        cm.DailyActivity.objects.bulk_create(acts)
+
+        # Admin ogohlantirishlari (qo'ng'iroq belgisi)
+        for _ in range(5):
+            cm.AdminAlert.objects.create(
+                kind=random.choice([cm.AdminAlertKind.BUSINESS_APPLICATION, cm.AdminAlertKind.MEMBER_JOINED,
+                                    cm.AdminAlertKind.PUSH_SENT]),
+                title="Yangi hodisa", body="Admin paneli bildirishnomasi.",
+                is_read=random.choice([True, False]),
+            )
+
+        return dict(members=len(members), businesses=len(core_bizzes),
+                    transactions=len(txs), payments=len(pays), applications=len(apps))
