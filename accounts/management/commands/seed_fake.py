@@ -21,6 +21,7 @@ import random
 from datetime import timedelta
 from decimal import Decimal
 
+from django.contrib.auth.hashers import make_password
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.db import transaction as db_transaction
@@ -103,9 +104,9 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--fresh", action="store_true", help="Avval BARCHA ma'lumotni o'chiradi (flush).")
-        parser.add_argument("--businesses", type=int, default=10)
-        parser.add_argument("--customers", type=int, default=40)
-        parser.add_argument("--transactions", type=int, default=400)
+        parser.add_argument("--businesses", type=int, default=8)
+        parser.add_argument("--customers", type=int, default=25)
+        parser.add_argument("--transactions", type=int, default=150)
         parser.add_argument("--seed", type=int, default=42, help="Random urug'i (takrorlanuvchanlik uchun).")
 
     def handle(self, *args, **opts):
@@ -130,6 +131,9 @@ class Command(BaseCommand):
     @db_transaction.atomic
     def _seed(self, opts):
         now = timezone.now()
+        # Barcha demo userlar paroli bir xil — hashni BIR MARTA hisoblab, hammaga
+        # beramiz (har biriga alohida PBKDF2 hashlash juda sekin bo'lardi).
+        demo_pw = make_password("demo12345")
 
         # ---- Admin operator ----
         admin, created = AdminUser.objects.get_or_create(
@@ -162,7 +166,7 @@ class Command(BaseCommand):
                 phone_number=rand_phone(),
                 role=User.Role.CUSTOMER,
             )
-            u.set_password("demo12345")
+            u.password = demo_pw
             u.save()
             Membership.objects.create(
                 user=u,
@@ -190,7 +194,7 @@ class Command(BaseCommand):
                 phone_number=rand_phone(),
                 role=User.Role.BUSINESS_OWNER,
             )
-            owner.set_password("demo12345")
+            owner.password = demo_pw
             owner.save()
             Membership.objects.create(user=owner, status=Membership.Status.ACTIVE,
                                       expires_at=now + timedelta(days=random.randint(30, 365)))
@@ -261,7 +265,7 @@ class Command(BaseCommand):
                     phone_number=rand_phone(),
                     role=User.Role.CASHIER,
                 )
-                cuser.set_password("demo12345")
+                cuser.password = demo_pw
                 cuser.save()
                 cashier = Cashier.objects.create(
                     business=biz, user=cuser,
@@ -388,46 +392,47 @@ class Command(BaseCommand):
                 is_read=random.choice([True, False]),
             )
 
-        # ---- Kunlik analitika snapshotlari (grafikalar uchun) ----
+        # ---- Kunlik analitika snapshotlari (grafikalar uchun) — bulk ----
+        # SEED=fake --fresh bilan ishlaydi (baza tozalangan), shuning uchun
+        # bulk_create xavfsiz: sana/kategoriya juftliklari takrorlanmaydi.
+        snap_objs, cat_stat_objs = [], []
         for d in range(60):
             day = (now - timedelta(days=d)).date()
             dau = random.randint(40, 120) + (60 - d)
             paid = random.randint(5, 30)
             downloads = paid + random.randint(20, 80)
-            DailyStatSnapshot.objects.update_or_create(
-                date=day,
-                defaults=dict(
-                    dau=dau, mau=dau * random.randint(4, 7),
-                    new_users=random.randint(3, 25), new_businesses=random.randint(0, 3),
-                    downloads_count=downloads, paid_count=paid,
-                    conversion_rate=Decimal(str(round(paid / downloads * 100, 2))),
-                    total_discount_amount=Decimal(random.randrange(500000, 5000000, 10000)),
-                    churned_users=random.randint(0, 8),
-                    churn_rate=Decimal(str(round(random.uniform(0.5, 5.0), 2))),
-                ),
-            )
+            snap_objs.append(DailyStatSnapshot(
+                date=day, dau=dau, mau=dau * random.randint(4, 7),
+                new_users=random.randint(3, 25), new_businesses=random.randint(0, 3),
+                downloads_count=downloads, paid_count=paid,
+                conversion_rate=Decimal(str(round(paid / downloads * 100, 2))),
+                total_discount_amount=Decimal(random.randrange(500000, 5000000, 10000)),
+                churned_users=random.randint(0, 8),
+                churn_rate=Decimal(str(round(random.uniform(0.5, 5.0), 2))),
+            ))
             for cat in random.sample(categories, 4):
-                CategoryActivityStat.objects.update_or_create(
+                cat_stat_objs.append(CategoryActivityStat(
                     date=day, category=cat,
-                    defaults=dict(views_count=random.randint(20, 300),
-                                  purchases_count=random.randint(2, 40)),
-                )
+                    views_count=random.randint(20, 300), purchases_count=random.randint(2, 40),
+                ))
+        DailyStatSnapshot.objects.bulk_create(snap_objs)
+        CategoryActivityStat.objects.bulk_create(cat_stat_objs)
 
-        # ---- Kunlik biznes statistikasi (dashboard) ----
+        # ---- Kunlik biznes statistikasi (dashboard) — bulk ----
+        biz_stat_objs = []
         for biz in businesses:
             for d in range(30):
                 day = (now - timedelta(days=d)).date()
                 cnt = random.randint(2, 25)
                 base_amt = Decimal(cnt * random.randrange(30000, 120000, 5000))
                 disc_amt = (base_amt * Decimal(random.randint(5, 20))) / Decimal(100)
-                DailyTransactionStat.objects.update_or_create(
+                biz_stat_objs.append(DailyTransactionStat(
                     business=biz, date=day,
-                    defaults=dict(
-                        total_transactions=cnt, total_base_amount=base_amt,
-                        total_discount_amount=disc_amt, total_final_amount=base_amt - disc_amt,
-                        average_discount_percent=Decimal(random.randint(8, 18)),
-                    ),
-                )
+                    total_transactions=cnt, total_base_amount=base_amt,
+                    total_discount_amount=disc_amt, total_final_amount=base_amt - disc_amt,
+                    average_discount_percent=Decimal(random.randint(8, 18)),
+                ))
+        DailyTransactionStat.objects.bulk_create(biz_stat_objs)
 
         # ---- Xulosa ----
         line = "=" * 54
