@@ -229,9 +229,13 @@ class BusinessDetailSerializer(serializers.ModelSerializer):
             "transactions_paid",
             "active_days",
         ]
-        # Parol javobda HECH QACHON qaytmaydi (yuqoridagi ariza serializeri
-        # bilan bir xil sabab).
-        extra_kwargs = {"password": {"write_only": True}}
+        # Biznes panel paroli admin uchun ko'rinadi: uni adminning o'zi
+        # "Yangi biznes qo'shish" oynasida o'rnatadi va biznes egasiga
+        # yetkazishi kerak. Bu endpoint faqat admin uchun ochiq
+        # (IsAdminOperator), panelda esa parol yashirin turadi va faqat
+        # "ko'rsatish" tugmasi bosilganda ochiladi.
+        # DIQQAT: bu maydonni hech qachon ommaviy/mijoz endpointlariga
+        # qo'shmang — BusinessApplication serializerida u write_only qoladi.
 
     def get_users_count(self, obj):
         return obj.transactions.values("member_name").distinct().count()
