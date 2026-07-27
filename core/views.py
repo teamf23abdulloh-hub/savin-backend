@@ -2,7 +2,7 @@ import calendar
 import random
 from datetime import timedelta
 
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Max, Min, Q, Sum
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny
@@ -1292,6 +1292,12 @@ class AnalyticsView(APIView):
         approved_count = Business.objects.filter(status=BusinessStatus.APPROVED).count() or 1
         avg_discount = round(weighted_discount / approved_count, 1)
 
+        # Minimum / Maksimum tejalgan — a'zolar orasidagi eng kam va eng ko'p
+        # jamg'arilgan tejash summasi (dizayndagi "Minimum/Maximum tejalgan").
+        saved_members = Member.objects.filter(savings_total__gt=0)
+        min_saved = int(saved_members.aggregate(m=Min("savings_total"))["m"] or 0)
+        max_saved = int(Member.objects.aggregate(m=Max("savings_total"))["m"] or 0)
+
         savings_by_cat = (
             all_tx.values("business__category")
             .annotate(saved=Sum("original_amount") - Sum("final_amount"), month=Sum("final_amount"))
@@ -1338,6 +1344,8 @@ class AnalyticsView(APIView):
                     },
                     "avg_per_visit": avg_per_visit,
                     "avg_discount": f"{avg_discount}%",
+                    "min_saved": min_saved,
+                    "max_saved": max_saved,
                     "by_category": savings_categories,
                 },
                 "insights": {

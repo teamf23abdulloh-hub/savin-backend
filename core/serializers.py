@@ -273,6 +273,8 @@ class BusinessWriteSerializer(serializers.ModelSerializer):
             "region",
             "district",
             "address",
+            "latitude",
+            "longitude",
             "work_days",
             "work_hours",
             "discount_percent",
