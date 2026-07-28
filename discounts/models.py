@@ -6,6 +6,44 @@ from django.db import models
 from businesses.models import Business, Cashier
 
 
+class Discount(models.Model):
+    """Biznesning chegirma turlari ("Chegirmalar" sahifasidagi kartalar).
+
+    Bitta biznesda bir nechta chegirma bo'lishi mumkin (Standart, Premium,
+    VIP...). Har biri alohida foiz, minimal xarid va faollik holatiga ega.
+    Biznes egasi ularni o'z panelida qo'shadi/tahrirlaydi/o'chiradi.
+    """
+
+    class Category(models.TextChoices):
+        STANDARD = "Standart", "Standart"
+        PREMIUM = "Premium", "Premium"
+        SPECIAL = "Maxsus taklif", "Maxsus taklif"
+        VIP = "VIP", "VIP"
+        BIRTHDAY = "Tug'ilgan kun", "Tug'ilgan kun"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name="discounts")
+    category = models.CharField(max_length=32, choices=Category.choices)
+    description = models.CharField(max_length=255, blank=True)
+    percent = models.PositiveSmallIntegerField()
+    min_purchase = models.DecimalField(max_digits=12, decimal_places=0, default=0)
+    is_active = models.BooleanField(default=True)
+    # Necha marta qo'llanilgani — kassir chegirmani qo'llaganda oshadi
+    usage_count = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        # Bitta biznesda bir xil kategoriya ikki marta bo'lmasin
+        constraints = [
+            models.UniqueConstraint(fields=["business", "category"], name="uniq_business_discount_category")
+        ]
+
+    def __str__(self):
+        return f"{self.business.name} · {self.category} {self.percent}%"
+
+
 class DiscountChangeRequest(models.Model):
     """
     'Chegirmalar' -> 'Foiz o'zgartirish' -> So'rov -> Admin

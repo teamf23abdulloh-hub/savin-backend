@@ -14,13 +14,21 @@ from discounts.views import (
     DiscountHistoryExportView,
     DiscountHistoryView,
     DiscountStatisticsView,
+    MyDiscountDetailView,
     MyDiscountInfoView,
+    MyDiscountListCreateView,
+    MyDiscountToggleView,
 )
 
 router = DefaultRouter()
 router.register("admin/discount-requests", AdminDiscountChangeRequestViewSet, basename="admin-discount-requests")
 
 urlpatterns = [
+    # Chegirma turlari (kartalar) — biznes egasi uchun to'liq CRUD
+    path("my-business/discounts/", MyDiscountListCreateView.as_view(), name="my-discounts"),
+    path("my-business/discounts/<uuid:pk>/", MyDiscountDetailView.as_view(), name="my-discount-detail"),
+    path("my-business/discounts/<uuid:pk>/toggle/", MyDiscountToggleView.as_view(), name="my-discount-toggle"),
+
     path("my-business/discount/", MyDiscountInfoView.as_view(), name="my-discount-info"),
     path("my-business/discount/change-request/", DiscountChangeRequestCreateView.as_view(), name="discount-change-request"),
     path("my-business/discount/history/", DiscountHistoryView.as_view(), name="discount-history"),

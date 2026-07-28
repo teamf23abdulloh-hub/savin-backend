@@ -14,8 +14,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from businesses.models import Application, Business, Cashier
-from discounts.models import DiscountChangeRequest, DiscountUsage
+from discounts.models import Discount, DiscountChangeRequest, DiscountUsage
 from discounts.serializers import (
+    DiscountSerializer,
     CashierDashboardSerializer,
     DiscountChangeRequestCreateSerializer,
     DiscountChangeRequestSerializer,
@@ -45,6 +46,59 @@ def filter_by_date_range(queryset, request, field="used_at"):
 
 
 # ==================== BIZNES EGASI: Chegirmalar ====================
+
+
+class MyDiscountListCreateView(generics.ListCreateAPIView):
+    """Biznesning chegirma turlari: ro'yxat / yangi qo'shish (biznes egasi)."""
+
+    serializer_class = DiscountSerializer
+    permission_classes = [IsAuthenticated, IsBusinessOwner]
+    pagination_class = None
+
+    def _business(self):
+        return get_object_or_404(Business, owner=self.request.user)
+
+    def get_queryset(self):
+        return Discount.objects.filter(business=self._business())
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx["business"] = self._business()
+        return ctx
+
+    def perform_create(self, serializer):
+        serializer.save(business=self._business())
+
+
+class MyDiscountDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Chegirmani tahrirlash / o'chirish (biznes egasi)."""
+
+    serializer_class = DiscountSerializer
+    permission_classes = [IsAuthenticated, IsBusinessOwner]
+
+    def _business(self):
+        return get_object_or_404(Business, owner=self.request.user)
+
+    def get_queryset(self):
+        return Discount.objects.filter(business=self._business())
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx["business"] = self._business()
+        return ctx
+
+
+class MyDiscountToggleView(APIView):
+    """Chegirmani faol/nofaol qilish (kartadagi tugmacha)."""
+
+    permission_classes = [IsAuthenticated, IsBusinessOwner]
+
+    def post(self, request, pk):
+        business = get_object_or_404(Business, owner=request.user)
+        discount = get_object_or_404(Discount, pk=pk, business=business)
+        discount.is_active = not discount.is_active
+        discount.save(update_fields=["is_active", "updated_at"])
+        return Response(DiscountSerializer(discount).data)
 
 
 class MyDiscountInfoView(APIView):

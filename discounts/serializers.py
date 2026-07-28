@@ -2,7 +2,45 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from discounts.models import DiscountChangeRequest, DiscountUsage
+from discounts.models import Discount, DiscountChangeRequest, DiscountUsage
+
+
+class DiscountSerializer(serializers.ModelSerializer):
+    """Biznes panelidagi chegirma kartasi."""
+
+    class Meta:
+        model = Discount
+        fields = [
+            "id",
+            "category",
+            "description",
+            "percent",
+            "min_purchase",
+            "is_active",
+            "usage_count",
+            "created_at",
+        ]
+        read_only_fields = ["id", "usage_count", "created_at"]
+
+    def validate_percent(self, value):
+        if not 1 <= value <= 100:
+            raise serializers.ValidationError("Chegirma foizi 1 dan 100 gacha bo'lishi kerak.")
+        return value
+
+    def validate(self, attrs):
+        # Bitta biznesda bir xil kategoriya takrorlanmasin (model cheklovi
+        # bilan bir xil, lekin bu yerda tushunarli xabar beramiz).
+        business = self.context.get("business")
+        category = attrs.get("category", getattr(self.instance, "category", None))
+        if business and category:
+            qs = Discount.objects.filter(business=business, category=category)
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError(
+                    {"category": "Bu kategoriya uchun chegirma allaqachon mavjud."}
+                )
+        return attrs
 
 
 class DiscountChangeRequestCreateSerializer(serializers.Serializer):
