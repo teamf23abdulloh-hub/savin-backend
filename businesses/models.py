@@ -270,6 +270,13 @@ class Cashier(models.Model):
         related_name="cashier_profile",
     )
     full_name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=32, blank=True)
+    # Kassir panelga kiradigan login (dizaynda "Baxtiyor123" ko'rinishida).
+    # Auth email orqali ishlagani uchun login'dan email hosil qilinadi.
+    login = models.CharField(max_length=64, blank=True)
+    # Biznes egasi kassirga aytib berishi uchun parol ochiq saqlanadi —
+    # `Business.password` bilan bir xil uslub (panelda yashirin turadi).
+    password_plain = models.CharField(max_length=128, blank=True)
     is_active = models.BooleanField(default=True)
     added_at = models.DateTimeField(auto_now_add=True)
 

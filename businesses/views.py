@@ -19,6 +19,7 @@ from businesses.serializers import (
     BusinessDashboardSerializer,
     BusinessSerializer,
     CashierCreateSerializer,
+    cashier_email_from_login,
     CashierSerializer,
     CategorySerializer,
     PartnershipStatusUpdateSerializer,
@@ -394,17 +395,28 @@ class MyCashierListCreateView(generics.ListCreateAPIView):
         business = get_object_or_404(Business, owner=request.user)
         serializer = CashierCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        # Kassir login orqali kiradi, auth esa email bilan ishlaydi —
+        # shuning uchun login'dan ichki email hosil qilamiz.
+        login = data["login"].strip()
+        email = cashier_email_from_login(login)
 
         cashier_user = User.objects.create_user(
-            username=serializer.validated_data["email"],
-            email=serializer.validated_data["email"],
-            password=serializer.validated_data["password"],
+            username=email,
+            email=email,
+            password=data["password"],
             role=User.Role.CASHIER,
+            phone_number=data.get("phone", "") or None,
         )
         cashier = Cashier.objects.create(
             business=business,
             user=cashier_user,
-            full_name=serializer.validated_data["full_name"],
+            full_name=data["full_name"],
+            phone=data.get("phone", ""),
+            login=login,
+            password_plain=data["password"],
+            is_active=data.get("is_active", True),
         )
         return Response(CashierSerializer(cashier).data, status=status.HTTP_201_CREATED)
 

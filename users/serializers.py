@@ -23,16 +23,32 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class LoginSerializer(serializers.Serializer):
-    """Kirish (Login): Email + Parol. Tasdiqlash, 2FA (ixtiyoriy)."""
+    """Kirish (Login): Email yoki kassir logini + Parol. 2FA (ixtiyoriy).
 
-    email = serializers.EmailField()
+    Kassirlar dizaynda oddiy login bilan kiradi ("Baxtiyor123"), auth esa
+    email orqali ishlaydi — shu sabab '@' bo'lmasa kassir logini deb
+    qaraladi va uning email'i topiladi.
+    """
+
+    # EmailField emas: kassir logini ham qabul qilinadi
+    email = serializers.CharField()
     password = serializers.CharField(write_only=True)
     otp_code = serializers.CharField(required=False, allow_blank=True)
 
+    def _resolve_email(self, value):
+        value = (value or "").strip()
+        if "@" in value:
+            return value
+        from businesses.models import Cashier
+
+        cashier = Cashier.objects.filter(login__iexact=value).select_related("user").first()
+        return cashier.user.email if cashier else value
+
     def validate(self, attrs):
-        user = authenticate(email=attrs["email"], password=attrs["password"])
+        email = self._resolve_email(attrs["email"])
+        user = authenticate(email=email, password=attrs["password"])
         if not user:
-            raise serializers.ValidationError("Email yoki parol noto'g'ri.")
+            raise serializers.ValidationError("Login yoki parol noto'g'ri.")
         if user.is_blocked:
             raise serializers.ValidationError("Foydalanuvchi bloklangan.")
         if user.is_2fa_enabled:

@@ -279,25 +279,58 @@ class ServiceSerializer(serializers.ModelSerializer):
 
 class CashierSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
+    # Biznes egasi kassirga aytib berishi uchun (panelda "ko'z" tugmasi ostida)
+    password = serializers.CharField(source="password_plain", read_only=True)
+    scans_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Cashier
-        fields = ["id", "business", "user", "email", "full_name", "is_active", "added_at"]
+        fields = [
+            "id",
+            "business",
+            "user",
+            "email",
+            "full_name",
+            "phone",
+            "login",
+            "password",
+            "scans_count",
+            "is_active",
+            "added_at",
+        ]
         # `user` yozib bo'lmaydigan bo'lishi shart — aks holda PATCH orqali
         # kassirni boshqa foydalanuvchi hisobiga bog'lab qo'yish mumkin edi.
-        read_only_fields = ["id", "added_at", "business", "user"]
+        read_only_fields = ["id", "added_at", "business", "user", "login"]
+
+    def get_scans_count(self, obj):
+        return obj.discount_usages.count()
+
+
+def cashier_email_from_login(login):
+    """Login'dan ichki email hosil qiladi (auth email orqali ishlaydi)."""
+    slug = re.sub(r"[^a-z0-9._-]", "", (login or "").strip().lower())
+    return f"{slug}@kassir.savin.local"
 
 
 class CashierCreateSerializer(serializers.Serializer):
-    """Kassir qo'shish: Email, parol berish."""
+    """Kassir qo'shish: Ism Familiya, telefon, login va parol."""
 
-    email = serializers.EmailField()
-    password = serializers.CharField(write_only=True)
     full_name = serializers.CharField()
+    phone = serializers.CharField(required=False, allow_blank=True)
+    login = serializers.CharField()
+    password = serializers.CharField(write_only=True, min_length=6)
+    is_active = serializers.BooleanField(required=False, default=True)
 
-    def validate_email(self, value):
-        if User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("Bu email allaqachon ro'yxatdan o'tgan.")
+    def validate_login(self, value):
+        value = (value or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9._-]{3,}", value):
+            raise serializers.ValidationError(
+                "Login kamida 3 ta belgidan iborat bo'lib, faqat harf, raqam va . _ - dan tashkil topsin."
+            )
+        if Cashier.objects.filter(login__iexact=value).exists():
+            raise serializers.ValidationError("Bu login band — boshqasini tanlang.")
+        if User.objects.filter(email=cashier_email_from_login(value)).exists():
+            raise serializers.ValidationError("Bu login band — boshqasini tanlang.")
         return value
 
 
