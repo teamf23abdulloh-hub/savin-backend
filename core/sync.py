@@ -43,11 +43,32 @@ def _gen_member_code():
     return str(random.randint(100000000, 999999999))
 
 
-def find_member_by_phone(phone):
-    """Telefon bo'yicha `Member` topadi (format har xil bo'lsa ham)."""
+def build_phone_index():
+    """Barcha `Member` larni telefon kaliti bo'yicha bir marta indekslaydi.
+
+    Ko'p foydalanuvchini birdaniga sinxronlaganda (`sync_members` buyrug'i)
+    har biri uchun alohida so'rov yubormaslik uchun.
+    """
+    index = {}
+    for pk, phone in Member.objects.values_list("id", "phone"):
+        key = _phone_key(phone)
+        if key:
+            index.setdefault(key, pk)
+    return index
+
+
+def find_member_by_phone(phone, index=None):
+    """Telefon bo'yicha `Member` topadi (format har xil bo'lsa ham).
+
+    `index` berilgan bo'lsa bazaga qo'shimcha so'rov yubormaydi.
+    """
     key = _phone_key(phone)
     if not key:
         return None
+
+    if index is not None:
+        pk = index.get(key)
+        return Member.objects.filter(pk=pk).first() if pk else None
 
     # Tez yo'l — aynan mos yozuv
     exact = Member.objects.filter(phone=phone).first()
@@ -75,7 +96,7 @@ def _status_from_membership(user):
     return None
 
 
-def sync_member_from_user(user):
+def sync_member_from_user(user, index=None):
     """Mijoz `User` uchun `Member` yozuvini yaratadi yoki yangilaydi.
 
     Telefon raqami bo'lmasa `None` qaytaradi — `Member` uchun telefon asosiy
@@ -95,7 +116,7 @@ def sync_member_from_user(user):
     if not name:
         name = (user.email or "").split("@")[0] or phone
 
-    member = find_member_by_phone(phone)
+    member = find_member_by_phone(phone, index=index)
     created = member is None
 
     if created:

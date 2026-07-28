@@ -9,7 +9,7 @@ o'tganlar uchun bir marta shu buyruq yurgiziladi:
 
 from django.core.management.base import BaseCommand
 
-from core.sync import find_member_by_phone, sync_member_from_user
+from core.sync import build_phone_index, find_member_by_phone, sync_member_from_user
 from users.models import User
 
 
@@ -22,10 +22,20 @@ class Command(BaseCommand):
             action="store_true",
             help="Haqiqatda yozish (bo'lmasa faqat ko'rsatadi)",
         )
+        parser.add_argument(
+            "--quiet",
+            action="store_true",
+            help="Faqat natijani chiqaradi (deploy loglarini to'ldirmaslik uchun)",
+        )
 
     def handle(self, *args, **options):
         apply_changes = options["apply"]
+        quiet = options["quiet"]
         customers = User.objects.filter(role=User.Role.CUSTOMER).order_by("created_at")
+
+        # Barcha Member'lar bir marta indekslanadi — har foydalanuvchi uchun
+        # alohida so'rov yubormaslik uchun (deployda tez ishlashi kerak).
+        index = build_phone_index()
 
         missing, no_phone, existing = [], [], 0
         for user in customers:
@@ -33,10 +43,13 @@ class Command(BaseCommand):
             if not phone:
                 no_phone.append(user)
                 continue
-            if find_member_by_phone(phone) is None:
+            if find_member_by_phone(phone, index=index) is None:
                 missing.append(user)
             else:
                 existing += 1
+
+        if quiet and not missing:
+            return
 
         self.stdout.write(f"Jami mijozlar          : {customers.count()}")
         self.stdout.write(f"Allaqachon ro'yxatda   : {existing}")
@@ -53,7 +66,7 @@ class Command(BaseCommand):
 
         created_count = 0
         for user in missing:
-            result = sync_member_from_user(user)
+            result = sync_member_from_user(user, index=index)
             if result and result[1]:
                 created_count += 1
 

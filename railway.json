@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py run_seed && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT",
+    "startCommand": "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py run_seed && (python manage.py sync_members --apply --quiet || echo 'sync_members xato berdi — server baribir ishga tushadi') && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT",
     "healthcheckPath": "/api/v1/health/",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE"

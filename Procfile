@@ -1,1 +1,1 @@
-web: python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py run_seed && gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000}
+web: python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py run_seed && (python manage.py sync_members --apply --quiet || echo 'sync_members xato berdi — server baribir ishga tushadi') && gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000}
