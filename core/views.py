@@ -1436,3 +1436,42 @@ class PublicStatsView(APIView):
                 "connection_hours": 24,
             }
         )
+
+
+class BusinessDiscountsView(APIView):
+    """Biznes egasi o'z panelida yaratgan chegirmalar (admin uchun ko'rish).
+
+    Loyhada ikkita biznes modeli bor: admin paneldagi `core.Business` va
+    asosiy ilovadagi `businesses.Business` (biznes egasi shunga kiradi va
+    chegirmalarni shunga qo'shadi). Ular panel logini orqali bog'lanadi —
+    `core/inbox.py` dagi bilan bir xil uslub.
+    """
+
+    def get(self, request, pk):
+        from businesses.models import Business as MainBusiness
+        from discounts.models import Discount
+        from discounts.serializers import DiscountSerializer
+
+        try:
+            business = Business.objects.get(pk=pk)
+        except Business.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        main = None
+        login = (business.login or "").strip()
+        if login:
+            main = MainBusiness.objects.filter(owner__email__iexact=login).first()
+        if main is None and business.name:
+            main = MainBusiness.objects.filter(name__iexact=business.name).first()
+
+        if main is None:
+            # Biznes hali asosiy ilovada ochilmagan (yoki login mos kelmadi)
+            return Response({"linked": False, "results": []})
+
+        discounts = Discount.objects.filter(business=main).order_by("-created_at")
+        return Response(
+            {
+                "linked": True,
+                "results": DiscountSerializer(discounts, many=True).data,
+            }
+        )

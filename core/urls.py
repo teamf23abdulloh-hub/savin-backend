@@ -26,6 +26,8 @@ urlpatterns = [
         name="businesses-transactions",
     ),
     path("businesses/<int:pk>/requests/", views.BusinessRequestListView.as_view(), name="businesses-requests"),
+    # Biznes egasi o'z panelida yaratgan chegirmalar
+    path("businesses/<int:pk>/discounts/", views.BusinessDiscountsView.as_view(), name="businesses-discounts"),
     path("business-requests/<int:pk>/approve/", views.BusinessRequestApproveView.as_view(), name="business-requests-approve"),
     path("business-requests/<int:pk>/reject/", views.BusinessRequestRejectView.as_view(), name="business-requests-reject"),
     path("applications/", views.ApplicationListView.as_view(), name="applications-list"),
