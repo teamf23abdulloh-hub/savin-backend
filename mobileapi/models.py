@@ -62,3 +62,41 @@ class CustomerNotification(models.Model):
 
     def __str__(self):
         return f"{self.title} -> {self.user_id}"
+
+
+class PhoneOtp(models.Model):
+    """Telefon raqamini SMS kod bilan tasdiqlash.
+
+    Kod ochiq saqlanmaydi — faqat xeshi. Har bir raqam uchun oxirgi
+    tasdiqlanmagan yozuv ishlatiladi; muddat tugasa yoki urinishlar
+    tugasa yaroqsiz bo'ladi.
+    """
+
+    MAX_ATTEMPTS = 5
+    TTL_SECONDS = 5 * 60          # kod 5 daqiqa amal qiladi
+    RESEND_COOLDOWN_SECONDS = 60  # qayta yuborish oralig'i
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    phone = models.CharField(max_length=32, db_index=True)
+    code_hash = models.CharField(max_length=128)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    is_used = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["phone", "-created_at"])]
+
+    def __str__(self):
+        return f"OTP {self.phone} ({'ishlatilgan' if self.is_used else 'faol'})"
+
+    @property
+    def is_expired(self):
+        from django.utils import timezone
+
+        return timezone.now() >= self.expires_at
+
+    @property
+    def is_valid(self):
+        return not self.is_used and not self.is_expired and self.attempts < self.MAX_ATTEMPTS

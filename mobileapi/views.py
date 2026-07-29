@@ -15,7 +15,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from businesses.models import Business, Category
 from transactions.models import Transaction
-from mobileapi.models import CustomerNotification, ReferralRequest
+from mobileapi import sms
+from mobileapi.models import CustomerNotification, PhoneOtp, ReferralRequest
 from mobileapi.serializers import (
     MobileBusinessSerializer,
     MobileCategorySerializer,
@@ -25,13 +26,10 @@ from mobileapi.serializers import (
 from mobileapi.services import ReferralReviewError, review_referral_request
 from users.models import Membership, User
 
-# Dev/test rejimda SMS yuborilmaydi — shu master kod qabul qilinadi.
-# DIQQAT: bu faqat SMS_DEV_MODE yoqilganda ishlaydi. Haqiqiy foydalanuvchilar
-# uchun ishga tushirishdan oldin SMS provayder ulanib, SMS_DEV_MODE=False
-# qilinishi SHART — aks holda istalgan telefon raqamiga shu kod bilan kirish
-# mumkin bo'lib qoladi.
-DEV_OTP = "000000"
-SMS_DEV_MODE = os.environ.get("SMS_DEV_MODE", "True") == "True"
+# SMS tasdiqlash `mobileapi/sms.py` da: har safar tasodifiy kod yaratiladi,
+# xeshlanib saqlanadi, 5 daqiqa amal qiladi va 5 tadan ortiq urinish
+# qabul qilinmaydi. Kredensiallar (ESKIZ_EMAIL/ESKIZ_PASSWORD) qo'yilmaguncha
+# test rejimida ishlaydi — kod javobda `dev_otp` sifatida qaytadi.
 
 # Click/Payme hali ulanmagan. Yoqilganda a'zolik to'lovsiz beriladi (demo).
 # Haqiqiy foydalanuvchilar uchun DEMO_PAYMENTS=False qilinishi SHART.
@@ -84,10 +82,29 @@ class MobileRegisterView(APIView):
         if changed:
             user.save(update_fields=["first_name", "last_name"])
 
-        return Response(
-            {"dev_otp": DEV_OTP, "phone_number": phone, "is_new": created},
-            status=status.HTTP_200_OK,
-        )
+        # Kodni tez-tez qayta so'rashdan himoya
+        wait = sms.seconds_until_resend(phone)
+        if wait:
+            return Response(
+                {
+                    "detail": f"Yangi kod so'rash uchun {wait} soniya kuting.",
+                    "retry_after": wait,
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        _otp, dev_code = sms.create_and_send(phone)
+
+        payload = {
+            "phone_number": phone,
+            "is_new": created,
+            "test_mode": sms.is_test_mode(),
+            "expires_in": PhoneOtp.TTL_SECONDS,
+        }
+        # Kod faqat test rejimida qaytadi — haqiqiy rejimda hech qachon
+        if dev_code is not None:
+            payload["dev_otp"] = dev_code
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class MobileLoginView(APIView):
@@ -108,17 +125,10 @@ class MobileLoginView(APIView):
         if not otp:
             return Response({"detail": "Tasdiqlash kodi majburiy."}, status=400)
 
-        if not SMS_DEV_MODE:
-            # Haqiqiy SMS provayder hali ulanmagan — dev rejim o'chirilgan
-            # bo'lsa hech kim kira olmasligi kerak (ochiq qolgandan ko'ra
-            # xizmatni to'xtatgan xavfsizroq).
-            return Response(
-                {"detail": "SMS xizmati sozlanmagan. Administratorga murojaat qiling."},
-                status=503,
-            )
-
-        if otp != DEV_OTP:
-            return Response({"detail": "Kod noto'g'ri."}, status=400)
+        # Kod bazadagi xesh bilan solishtiriladi (muddat va urinishlar bilan)
+        ok, error = sms.verify(phone, otp)
+        if not ok:
+            return Response({"detail": error}, status=400)
 
         try:
             user = User.objects.get(phone_number=phone, role=User.Role.CUSTOMER)
