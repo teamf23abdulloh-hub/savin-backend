@@ -353,6 +353,8 @@ class CashierMeView(APIView):
                 "id": cashier.id,
                 "full_name": cashier.full_name,
                 "email": request.user.email,
+                "phone": cashier.phone,
+                "login": cashier.login,
                 "is_active": cashier.is_active,
                 "added_at": cashier.added_at,
                 "business": {
@@ -369,6 +371,43 @@ class CashierMeView(APIView):
                 },
             }
         )
+
+    def patch(self, request):
+        """Kassir o'z ma'lumotlarini o'zgartiradi (ism, telefon, parol).
+
+        Login, biznes va kassir ID o'zgarmaydi — ular tizim tomonidan
+        biriktiriladi va kirish/hisobot yaxlitligiga bog'liq.
+        """
+        cashier = get_object_or_404(Cashier, user=request.user)
+        user = request.user
+
+        full_name = request.data.get("full_name")
+        if full_name is not None:
+            full_name = str(full_name).strip()
+            if not full_name:
+                return Response({"full_name": ["Ism bo'sh bo'lmasin."]}, status=400)
+            cashier.full_name = full_name
+
+        phone = request.data.get("phone")
+        if phone is not None:
+            cashier.phone = str(phone).strip()
+            user.phone_number = cashier.phone or None
+            user.save(update_fields=["phone_number"])
+
+        password = request.data.get("password")
+        if password:
+            if len(str(password)) < 6:
+                return Response(
+                    {"password": ["Parol kamida 6 ta belgidan iborat bo'lsin."]},
+                    status=400,
+                )
+            user.set_password(str(password))
+            user.save(update_fields=["password"])
+            # Biznes egasi panelida ko'rinadigan nusxa ham yangilanadi
+            cashier.password_plain = str(password)
+
+        cashier.save()
+        return self.get(request)
 
 
 class CashierDashboardView(APIView):
