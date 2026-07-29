@@ -140,7 +140,24 @@ def sync_member_from_user(user, index=None):
         member.status = mapped
 
     member.save()
+
+    # Yangi a'zo qo'shilganda admin panelga bildirishnoma (qo'ng'iroq belgisi)
+    if created:
+        _notify_new_member(member)
+
     return member, created
+
+
+def _notify_new_member(member):
+    """Admin panelning bildirishnomalar qo'ng'irog'iga yangi a'zo haqida xabar."""
+    from .models import AdminAlert, AdminAlertKind
+
+    AdminAlert.objects.create(
+        kind=AdminAlertKind.MEMBER_JOINED,
+        title="Yangi foydalanuvchi ro'yxatdan o'tdi",
+        body=f"{member.name} · {member.phone}",
+        member=member,
+    )
 
 
 def sync_member_safe(user):

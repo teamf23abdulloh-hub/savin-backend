@@ -355,6 +355,8 @@ class CashierMeView(APIView):
                 "email": request.user.email,
                 "phone": cashier.phone,
                 "login": cashier.login,
+                # Panelda ko'rsatiladigan kassir raqami (UUID'ning oxirgi qismi)
+                "cashier_code": f"#KSR-{str(cashier.id)[-4:].upper()}",
                 "is_active": cashier.is_active,
                 "added_at": cashier.added_at,
                 "business": {

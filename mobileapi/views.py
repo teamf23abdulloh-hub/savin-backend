@@ -66,10 +66,18 @@ class MobileRegisterView(APIView):
         username = phone
         email = f"{digits}@customer.savin.local"
 
+        # Ism darhol `defaults`ga qo'yiladi — aks holda foydalanuvchi avval
+        # ismsiz yaratilib, admin panelga ketadigan bildirishnomada ism
+        # o'rniga telefon raqami chiqib qolardi.
         user, created = User.objects.get_or_create(
             phone_number=phone,
             role=User.Role.CUSTOMER,
-            defaults={"username": username, "email": email},
+            defaults={
+                "username": username,
+                "email": email,
+                "first_name": first_name,
+                "last_name": last_name,
+            },
         )
         # Ism kiritilgan bo'lsa yangilaymiz
         changed = False

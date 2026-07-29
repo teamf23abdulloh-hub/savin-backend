@@ -465,6 +465,10 @@ class AdminAlert(models.Model):
     business = models.ForeignKey(
         Business, on_delete=models.CASCADE, null=True, blank=True, related_name="alerts"
     )
+    # Yangi a'zo haqidagi bildirishnoma bosilganda o'sha foydalanuvchi ochiladi
+    member = models.ForeignKey(
+        "Member", on_delete=models.CASCADE, null=True, blank=True, related_name="alerts"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     is_read = models.BooleanField(default=False)
 

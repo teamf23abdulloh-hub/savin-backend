@@ -616,11 +616,12 @@ class ReferralRequestSerializer(serializers.ModelSerializer):
 
 class AdminAlertSerializer(serializers.ModelSerializer):
     business_id = serializers.IntegerField(source="business.id", read_only=True, allow_null=True)
+    member_id = serializers.IntegerField(source="member.id", read_only=True, allow_null=True)
     time_ago = serializers.SerializerMethodField()
 
     class Meta:
         model = AdminAlert
-        fields = ["id", "kind", "title", "body", "business_id", "time_ago", "is_read"]
+        fields = ["id", "kind", "title", "body", "business_id", "member_id", "time_ago", "is_read"]
 
     def get_time_ago(self, obj):
         delta = timezone.now() - obj.created_at
