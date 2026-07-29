@@ -1390,3 +1390,49 @@ class AnalyticsExportView(APIView):
                 "rows": rows,
             }
         )
+
+
+class PublicStatsView(APIView):
+    """Landing sayti uchun ochiq statistika (admin paneldagi haqiqiy raqamlar).
+
+    Faqat umumlashtirilgan sonlar qaytadi — shaxsiy ma'lumot yo'q, shu sabab
+    autentifikatsiyasiz ochiq. Landing'dagi "400+ hamkor / 50K+ a'zo" kabi
+    raqamlar avval qo'lda yozilgan edi.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    pagination_class = None
+
+    def get(self, request):
+        today = timezone.now().date()
+        month_start = today.replace(day=1)
+        prev_month_end = month_start - timedelta(days=1)
+        prev_month_start = prev_month_end.replace(day=1)
+
+        partners = Business.objects.filter(status=BusinessStatus.APPROVED).count()
+        members = Member.objects.filter(is_blocked=False).count()
+
+        # Mijozlar oqimi o'sishi: shu oy va o'tgan oydagi tashriflar nisbati
+        tx = BusinessTransaction.objects.filter(status=TransactionStatus.SUCCESS)
+        this_month = tx.filter(created_at__date__gte=month_start).count()
+        last_month = tx.filter(
+            created_at__date__gte=prev_month_start, created_at__date__lte=prev_month_end
+        ).count()
+        if last_month:
+            growth = round((this_month - last_month) / last_month * 100)
+        else:
+            growth = 100 if this_month else 0
+
+        total_saved = int(Member.objects.aggregate(t=Sum("savings_total"))["t"] or 0)
+
+        return Response(
+            {
+                "partners": partners,
+                "members": members,
+                "growth_percent": growth,
+                "total_saved": total_saved,
+                # Ulanish muddati — va'da qilingan xizmat ko'rsatkichi
+                "connection_hours": 24,
+            }
+        )

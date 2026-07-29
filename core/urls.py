@@ -52,4 +52,7 @@ urlpatterns = [
     path("referral-requests/", views.ReferralRequestListView.as_view(), name="referral-requests-list"),
     path("referral-requests/<int:pk>/approve/", views.ReferralRequestApproveView.as_view(), name="referral-requests-approve"),
     path("referral-requests/<int:pk>/reject/", views.ReferralRequestRejectView.as_view(), name="referral-requests-reject"),
+
+    # Landing sayti uchun ochiq statistika (haqiqiy raqamlar)
+    path("public/stats/", views.PublicStatsView.as_view(), name="public-stats"),
 ]
