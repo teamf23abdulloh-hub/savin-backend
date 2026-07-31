@@ -31,7 +31,6 @@ from businesses.services import (
     reject_application,
 )
 from discounts.models import DiscountUsage
-from notifications.models import UserNotification
 from users.models import User
 from users.permissions import IsAdminRole, IsBusinessOwner, IsCashier
 

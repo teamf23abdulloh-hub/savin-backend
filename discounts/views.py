@@ -292,6 +292,18 @@ def find_customer_by_qr(qr_value):
     if "@" in value:
         return User.objects.filter(email__iexact=value).first(), None
 
+    # 3) Telefon raqami — QR skanerlanmasa kassir qo'lda kiritadi.
+    #    Formatlar har xil bo'lishi mumkin, shu sabab oxirgi 9 raqam bo'yicha.
+    digits = re.sub(r"\D", "", value)
+    if len(digits) >= 9:
+        tail = digits[-9:]
+        customer = (
+            User.objects.filter(
+                role=User.Role.CUSTOMER, phone_number__endswith=tail
+            ).first()
+        )
+        return customer, None
+
     return None, None
 
 

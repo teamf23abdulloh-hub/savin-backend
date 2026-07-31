@@ -12,6 +12,8 @@ natija beradi (User yaratish, Business yaratish, bildirishnoma).
 
 from django.utils import timezone
 
+from businesses.default_services import create_default_services
+
 from businesses.models import Application, Business
 from notifications.models import UserNotification
 from users.models import User
@@ -98,6 +100,11 @@ def approve_application(application, reviewer=None):
         owner.role = User.Role.BUSINESS_OWNER
         owner.save(update_fields=["role"])
 
+    # Kategoriyaga mos standart xizmatlar — busiz kassir QR skanerlagach
+    # 4-qadamda "xizmat turi"ni tanlay olmaydi. Egasi ularni keyin
+    # o'z panelida tahrirlashi mumkin.
+    create_default_services(business)
+
     UserNotification.objects.create(
         user=owner,
         notification_type=UserNotification.NotificationType.SYSTEM,
@@ -107,6 +114,10 @@ def approve_application(application, reviewer=None):
             "hamkorlik faollashtirildi."
         ),
     )
+
+    # Biznes egasiga SMS: tasdiqlangani va panel havolasi
+    send_business_decision_sms(business, approved=True)
+
     return business
 
 
@@ -128,4 +139,78 @@ def reject_application(application, reason="", reviewer=None):
                 + (f"Sabab: {reason}" if reason else "")
             ),
         )
+
+    # Ariza egasiga SMS: rad etilgani va sababi
+    send_application_rejected_sms(application, reason=reason)
+
     return application
+
+
+# ---------------------------------------------------------------------------
+# SMS xabarnomalar
+# ---------------------------------------------------------------------------
+
+
+def _panel_url():
+    """Biznes/kassir panelining manzili."""
+    import os
+
+    return (
+        os.environ.get("BUSINESS_PANEL_URL")
+        or "https://savin-biznes-kassir.vercel.app"
+    ).rstrip("/")
+
+
+def send_business_decision_sms(business, approved=True):
+    """Biznes tasdiqlanganda egasiga SMS yuboradi (panel havolasi bilan).
+
+    SMS provayder ulanmagan bo'lsa (test rejimi) xabar faqat logga yoziladi —
+    tasdiqlash jarayoni baribir to'xtamaydi.
+    """
+    from mobileapi import sms
+
+    phone = (business.phone_number or "").strip()
+    if not phone and business.owner_id:
+        phone = (business.owner.phone_number or "").strip()
+    if not phone:
+        return False
+
+    login = business.owner.email if business.owner_id else ""
+    text = (
+        f"Savin: \"{business.name}\" biznesingiz tasdiqlandi! "
+        f"Panelga kiring: {_panel_url()} "
+        + (f"Login: {login}" if login else "")
+    ).strip()
+
+    try:
+        return sms.get_provider().send(phone, text)
+    except Exception:  # SMS xatosi tasdiqlashni to'xtatmasin
+        import logging
+
+        logging.getLogger(__name__).exception("Tasdiqlash SMS yuborilmadi (%s)", phone)
+        return False
+
+
+def send_application_rejected_sms(application, reason=""):
+    """Ariza rad etilganda ariza egasiga SMS yuboradi."""
+    from mobileapi import sms
+
+    phone = (application.phone_number or "").strip()
+    if not phone and application.applicant_id:
+        phone = (application.applicant.phone_number or "").strip()
+    if not phone:
+        return False
+
+    text = (
+        f"Savin: \"{application.business_name}\" bo'yicha arizangiz rad etildi."
+        + (f" Sabab: {reason}" if reason else "")
+        + " Savollar bo'lsa: @savin_biznes"
+    )
+
+    try:
+        return sms.get_provider().send(phone, text)
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).exception("Rad etish SMS yuborilmadi (%s)", phone)
+        return False
