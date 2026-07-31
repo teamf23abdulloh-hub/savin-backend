@@ -1,4 +1,5 @@
 import csv
+import re
 import uuid
 from decimal import Decimal
 
@@ -251,6 +252,48 @@ class DiscountStatisticsView(APIView):
 
 # ==================== KASSIR PANELI ====================
 
+# Mijoz ilovasidagi QR ichidagi qiymat: "SAVIN-USER-<uuid>-<millisekund>".
+# Eski/boshqa ko'rinishlar ham qabul qilinadi: toza UUID yoki email.
+_UUID_RE = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE
+)
+# QR ilovada har 5 daqiqada yangilanadi. Telefon va server soati biroz farq
+# qilishi mumkin, shuning uchun chegara kengroq olingan.
+QR_MAX_AGE_SECONDS = 15 * 60
+
+
+def find_customer_by_qr(qr_value):
+    """QR qiymatidan mijozni topadi.
+
+    Qaytaradi: `(customer, error)` — `error` bo'lsa foydalanuvchiga
+    ko'rsatiladigan tushunarli matn.
+    """
+    value = (qr_value or "").strip()
+    if not value:
+        return None, "QR kod bo'sh."
+
+    # 1) Ichidan UUID ajratib olamiz (prefiks/suffiks bo'lsa ham)
+    match = _UUID_RE.search(value)
+    if match:
+        # QR eskirganini tekshiramiz (oxiridagi millisekundli vaqt belgisi)
+        tail = value[match.end():].strip("-")
+        if tail.isdigit():
+            try:
+                issued_ms = int(tail)
+                age = timezone.now().timestamp() - issued_ms / 1000
+                if age > QR_MAX_AGE_SECONDS:
+                    return None, "QR kod muddati tugagan. Mijoz ilovada QR'ni yangilasin."
+            except (ValueError, OverflowError):
+                pass  # vaqt belgisi buzuq bo'lsa e'tiborsiz qoldiramiz
+        customer = User.objects.filter(pk=match.group(0)).first()
+        return customer, None
+
+    # 2) Email ko'rinishida bo'lsa
+    if "@" in value:
+        return User.objects.filter(email__iexact=value).first(), None
+
+    return None, None
+
 
 def get_active_cashier_or_404(user):
     """So'rov yuborgan foydalanuvchining faol kassir profili."""
@@ -481,13 +524,10 @@ class CashierScanQrView(APIView):
         serializer.is_valid(raise_exception=True)
         qr_value = serializer.validated_data["value"]
 
-        customer = None
-        try:
-            customer = User.objects.filter(pk=uuid.UUID(qr_value)).first()
-        except ValueError:
-            if "@" in qr_value:
-                customer = User.objects.filter(email__iexact=qr_value).first()
+        customer, qr_error = find_customer_by_qr(qr_value)
 
+        if qr_error:
+            return Response({"detail": qr_error}, status=status.HTTP_400_BAD_REQUEST)
         if not customer:
             return Response(
                 {"detail": "QR kod bo'yicha mijoz topilmadi."},
