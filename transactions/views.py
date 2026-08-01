@@ -5,10 +5,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.exceptions import PermissionDenied
 
-from django.db.models import Sum, Avg, Count, Q
+from django.db.models import Sum, Avg, Count
 from django.utils import timezone
 from django.http import HttpResponse
-from datetime import datetime, timedelta
+from datetime import timedelta
 import csv
 
 from .models import Transaction, TransactionLog, DailyTransactionStat

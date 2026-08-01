@@ -370,7 +370,6 @@ class Command(BaseCommand):
             ("SmartMed Klinika", BusinessCategory.SHIFOXONA, BusinessStatus.PENDING, 2, 106, {}),
             ("Green Coffee", BusinessCategory.KAFE, BusinessStatus.APPROVED, 10, 106, {}),
         ]
-        stir_override = None
         for name, cat, st, disc, days, extra in named:
             stir_val = extra.pop("stir", None)
             b = make(name, cat, st, disc, days, **extra)

@@ -13,10 +13,10 @@ umumiy `api/` prefiksi ularni ham o'ziga tortib ketardi.
 """
 
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
 from django.http import JsonResponse
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve as serve_media
 
 
 def health(request):
@@ -47,5 +47,21 @@ urlpatterns = [
     path('api/', include('core.urls')),
 ]
 
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Yuklangan media fayllar (biznes logolari, avatarlar, QR rasmlar) HAR DOIM
+# xizmat qilinadi — faqat DEBUG'da emas.
+#
+# Ilgari bu yerda `if settings.DEBUG: urlpatterns += static(...)` turardi.
+# `django.conf.urls.static.static()` esa DEBUG=False bo'lganda BO'SH ro'yxat
+# qaytaradi, shuning uchun production'da barcha logo/avatar/QR so'rovlari 404
+# olardi (whitenoise faqat STATIC_ROOT'ni biladi, MEDIA_ROOT'ni emas).
+#
+# ESLATMA: Railway/Render kabi platformalarda disk VAQTINCHALIK — yuklangan
+# fayllar har redeploy'da o'chadi. Doimiy saqlash uchun object storage (S3,
+# Cloudflare R2) yoki persistent disk ulash kerak.
+urlpatterns += [
+    re_path(
+        r"^%s(?P<path>.*)$" % settings.MEDIA_URL.lstrip("/"),
+        serve_media,
+        {"document_root": settings.MEDIA_ROOT},
+    ),
+]

@@ -447,12 +447,12 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(line))
         self.stdout.write(self.style.SUCCESS("  SOXTA MA'LUMOT TAYYOR"))
         self.stdout.write(self.style.SUCCESS(line))
-        self.stdout.write(self.style.SUCCESS(f"  Admin panel : admin / admin12345"))
+        self.stdout.write(self.style.SUCCESS("  Admin panel : admin / admin12345"))
         if owner_logins:
             self.stdout.write(self.style.SUCCESS(f"  Biznes egasi: {owner_logins[0]} / demo12345"))
         if cashier_logins:
             self.stdout.write(self.style.SUCCESS(f"  Kassir      : {cashier_logins[0]} / demo12345"))
-        self.stdout.write(self.style.SUCCESS(f"  Barcha soxta userlar paroli: demo12345"))
+        self.stdout.write(self.style.SUCCESS("  Barcha soxta userlar paroli: demo12345"))
         self.stdout.write(self.style.SUCCESS(line))
         self.stdout.write(self.style.SUCCESS(
             f"  [biznes/kassir] Bizneslar={len(businesses)}  Mijozlar={len(customers)}  "

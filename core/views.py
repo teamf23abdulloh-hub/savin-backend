@@ -1079,7 +1079,6 @@ class DashboardView(APIView):
 
         stat = PlatformStat.objects.first()
         downloads = stat.downloads if stat else 0
-        total_members = Member.objects.count()
         subscribed = Member.objects.filter(status=Status.PREMIUM).count()
         subscription_rate = f"{(subscribed / downloads * 100):.1f}%" if downloads else "0%"
 

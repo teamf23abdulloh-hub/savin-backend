@@ -14,7 +14,6 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         today = timezone.localdate()
-        now = timezone.now()
 
         day_start = timezone.make_aware(timezone.datetime.combine(today, timezone.datetime.min.time()))
         month_start = day_start - timezone.timedelta(days=30)

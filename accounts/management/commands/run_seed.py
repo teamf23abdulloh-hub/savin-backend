@@ -1,49 +1,60 @@
-"""Deploy vaqtida SEED env-o'zgaruvchisiga qarab demo ma'lumotni boshqaradi.
+"""ESKI BUYRUQ — endi HECH NARSA QILMAYDI (ataylab).
 
-Bu buyruq startCommand'da (railway.json / Procfile) `migrate`dan keyin ishlaydi,
-ya'ni RUNTIME'da — Postgres mavjud. Console kerak emas: Railway'da faqat
-`SEED` o'zgaruvchisini qo'yib, servisni Redeploy qilasiz.
+TARIX / NEGA O'CHIRILGAN
+------------------------
+Ilgari bu buyruq deploy'ning `startCommand`ida turardi va `SEED` env
+o'zgaruvchisiga qarab bazani TOZALAB qayta to'ldirardi:
 
-    SEED=fake   -> barcha ma'lumotni tozalab, realistik demo bilan to'ldiradi (seed_fake --fresh)
-    SEED=reset  -> barcha ma'lumotni o'chirib, faqat admin qoldiradi (seed_demo)
-    (bo'sh/boshqa) -> hech narsa qilmaydi
+    SEED=fake   -> seed_fake --fresh   (flush + soxta ma'lumot)
+    SEED=reset  -> seed_demo           (flush + faqat admin)
 
-Natija va (agar bo'lsa) XATO to'liq deploy logiga chiqadi. Buyruq HECH QACHON
-deploy'ni yiqitmaydi — xato bo'lsa ham gunicorn ishga tushaveradi.
+Muammo: `SEED` o'zgaruvchisi Railway'da bir marta qo'yilgach, uni qo'lda
+o'chirmaguncha O'ZGARMAS bo'lib qolardi. Natijada HAR BIR DEPLOYDA baza
+flush qilinib, real foydalanuvchilar kiritgan barcha yangi ma'lumotlar
+yo'q bo'lib ketardi.
 
-Ishlatib bo'lgach, takror-seedni to'xtatish uchun SEED'ni `off` qiling yoki o'chiring.
+Endi demo ma'lumot faqat QO'LDA, Railway Console orqali boshqariladi:
+
+    python manage.py seed_fake --fresh   # tozalab, soxta demo ma'lumot to'ldiradi
+    python manage.py seed_demo           # hammasini o'chirib, faqat admin qoldiradi
+
+Bu fayl o'chirilmadi, chunki Railway panelidagi (dashboard) eski `startCommand`
+`railway.json`dan USTUN turadi. Agar o'sha yerda hali `run_seed` chaqirilayotgan
+bo'lsa, buyruq mavjud bo'lmasa deploy "Unknown command" bilan yiqilardi.
+Shuning uchun u zararsiz "no-op" sifatida qoldirildi — endi hech qanday
+sharoitda ma'lumotni o'chirmaydi.
 """
 
 import os
-import traceback
 
-from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
 
 class Command(BaseCommand):
-    help = "SEED env qiymatiga qarab demo ma'lumot yaratadi/tozalaydi (deploy'da avtomatik)."
+    help = "Eskirgan: hech narsa qilmaydi. Demo ma'lumot uchun seed_fake / seed_demo ishlating."
 
     def handle(self, *args, **opts):
-        mode = (os.environ.get("SEED") or "").strip().lower()
-        line = "=" * 56
+        line = "=" * 60
+        seed_env = (os.environ.get("SEED") or "").strip()
+
         self.stdout.write(line)
-        self.stdout.write(f"[run_seed] SEED = {mode!r}")
+        self.stdout.write(self.style.WARNING("[run_seed] Bu buyruq eskirgan va HECH NARSA QILMAYDI."))
 
-        if mode not in ("fake", "reset"):
-            self.stdout.write("[run_seed] 'fake' yoki 'reset' emas — o'tkazib yuborildi.")
-            self.stdout.write(line)
-            return
+        if seed_env:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"[run_seed] SEED={seed_env!r} env o'zgaruvchisi hali qo'yilgan, lekin "
+                    "u ENDI E'TIBORGA OLINMAYDI — bazangiz xavfsiz."
+                )
+            )
+            self.stdout.write(
+                self.style.WARNING(
+                    "[run_seed] Chalkashmaslik uchun uni Railway -> Variables'dan o'chirib "
+                    "tashlang."
+                )
+            )
 
-        try:
-            if mode == "fake":
-                call_command("seed_fake", "--fresh")
-            else:  # reset
-                call_command("seed_demo")
-            self.stdout.write(self.style.SUCCESS(f"[run_seed] '{mode}' MUVAFFAQIYATLI bajarildi."))
-        except Exception:
-            # Deploy yiqilmasin — xatoni logga to'liq chiqaramiz.
-            self.stdout.write(self.style.ERROR("[run_seed] XATO YUZ BERDI! To'liq traceback:"))
-            self.stdout.write(traceback.format_exc())
-
+        self.stdout.write("[run_seed] Demo ma'lumot uchun Railway Console'da qo'lda ishlating:")
+        self.stdout.write("             python manage.py seed_fake --fresh   # soxta ma'lumot")
+        self.stdout.write("             python manage.py seed_demo           # hammasini tozalash")
         self.stdout.write(line)

@@ -140,15 +140,37 @@ DATABASES = {
     )
 }
 
-# Production'da haqiqiy DATABASE_URL yo'q bo'lsa — ogohlantiramiz. SQLite
-# PaaS'da vaqtinchalik (har redeploy'da o'chadi), shuning uchun Postgres
-# ulanishi SHART.
+# Production'da haqiqiy DATABASE_URL bo'lishi SHART.
+#
+# Ilgari bu yerda faqat `logging.warning(...)` turardi. Natijada Postgres
+# ulanmagan bo'lsa, ilova jimgina SQLite'ga tushardi — Railway/Render diski esa
+# VAQTINCHALIK, ya'ni har redeploy'da BUTUN BAZA (barcha foydalanuvchilar,
+# bizneslar, tranzaksiyalar) yo'q bo'lib ketardi. Ogohlantirish deploy loglari
+# ichida ko'rinmay qolardi va muammo sezilmasdi.
+#
+# Endi bu holat deploy'ni darhol, tushunarli xabar bilan to'xtatadi.
 if not DEBUG and not _db_url:
+    if os.environ.get("ALLOW_SQLITE_IN_PRODUCTION", "False") != "True":
+        raise ImproperlyConfigured(
+            "DATABASE_URL o'rnatilmagan!\n"
+            "\n"
+            "DEBUG=False (production) rejimida SQLite ishlatib bo'lmaydi: Railway va\n"
+            "Render disklari vaqtinchalik, shuning uchun BARCHA MA'LUMOT har\n"
+            "redeploy'da o'chib ketadi.\n"
+            "\n"
+            "Yechim (Railway):\n"
+            "  1) Loyihaga Postgres qo'shing:  New -> Database -> Add PostgreSQL\n"
+            "  2) Backend servis -> Variables -> yangi o'zgaruvchi qo'shing:\n"
+            "       DATABASE_URL = ${{Postgres.DATABASE_URL}}\n"
+            "  3) Redeploy qiling.\n"
+            "\n"
+            "(Agar ma'lumot yo'qolishi ATAYLAB kerak bo'lsa — masalan bir martalik\n"
+            " sinov muhitida — ALLOW_SQLITE_IN_PRODUCTION=True qo'ying.)"
+        )
     import logging
     logging.getLogger(__name__).warning(
-        "DATABASE_URL o'rnatilmagan! Vaqtinchalik SQLite ishlatilmoqda — "
-        "ma'lumot har redeploy'da o'chadi. Railway'da Postgres'ni ulang: "
-        "DATABASE_URL = ${{savin-db.DATABASE_URL}}"
+        "ALLOW_SQLITE_IN_PRODUCTION=True — vaqtinchalik SQLite ishlatilmoqda. "
+        "Ma'lumot har redeploy'da o'chadi!"
     )
 
 AUTH_USER_MODEL = 'users.User'
