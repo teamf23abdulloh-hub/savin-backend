@@ -27,6 +27,7 @@ from businesses.serializers import (
 )
 from businesses.services import (
     ApplicationApproveError,
+    send_cashier_created_sms,
     approve_application,
     reject_application,
 )
@@ -417,6 +418,11 @@ class MyCashierListCreateView(generics.ListCreateAPIView):
             password_plain=data["password"],
             is_active=data.get("is_active", True),
         )
+
+        # Kassirga kirish ma'lumotlarini SMS bilan yuboramiz (telefoni bo'lsa).
+        # SMS xatosi kassir qo'shishni to'xtatmaydi.
+        send_cashier_created_sms(cashier, password=data["password"])
+
         return Response(CashierSerializer(cashier).data, status=status.HTTP_201_CREATED)
 
 

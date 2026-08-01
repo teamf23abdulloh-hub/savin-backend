@@ -191,6 +191,29 @@ def send_business_decision_sms(business, approved=True):
         return False
 
 
+def send_cashier_created_sms(cashier, password=""):
+    """Kassir qo'shilganda unga kirish ma'lumotlarini SMS bilan yuboradi."""
+    from mobileapi import sms
+
+    phone = (cashier.phone or "").strip()
+    if not phone:
+        return False
+
+    text = (
+        f"Savin: siz \"{cashier.business.name}\" kassiri sifatida qo'shildingiz. "
+        f"Panel: {_panel_url()} Login: {cashier.login}"
+        + (f" Parol: {password}" if password else "")
+    )
+
+    try:
+        return sms.get_provider().send(phone, text)
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).exception("Kassir SMS yuborilmadi (%s)", phone)
+        return False
+
+
 def send_application_rejected_sms(application, reason=""):
     """Ariza rad etilganda ariza egasiga SMS yuboradi."""
     from mobileapi import sms

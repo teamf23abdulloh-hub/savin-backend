@@ -159,7 +159,12 @@ def create_and_send(phone):
         expires_at=timezone.now() + timedelta(seconds=PhoneOtp.TTL_SECONDS),
     )
 
-    text = f"Savin: tasdiqlash kodingiz {code}. Hech kimga aytmang."
+    # Eskiz faqat OLDINDAN TASDIQLANGAN shablonlarni yuboradi va matn
+    # tasdiqlangan variantga aynan mos kelishi kerak. Moderatsiyada matn
+    # biroz o'zgarsa, kodni qayta joylashtirmasdan `SMS_OTP_TEMPLATE`
+    # orqali moslash mumkin ({code} kod bilan almashtiriladi).
+    template = _env("SMS_OTP_TEMPLATE") or "Savin: tasdiqlash kodingiz {code}. Hech kimga aytmang."
+    text = template.replace("{code}", code)
     get_provider().send(phone, text)
 
     return otp, (code if is_test_mode() else None)
