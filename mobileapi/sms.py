@@ -94,22 +94,44 @@ class EskizSmsProvider(SmsProvider):
         self._token = (data.get("data") or {}).get("token")
         return self._token
 
+    # Eskiz hisobi "test" rolida bo'lsa yoki matn hali moderatsiyadan
+    # o'tmagan bo'lsa, faqat shu standart matnni qabul qiladi.
+    ESKIZ_TEST_TEXT = "Bu Eskiz dan test"
+
+    def _send_raw(self, phone, text, token):
+        self._request(
+            "/message/sms/send",
+            {
+                "mobile_phone": phone.lstrip("+"),
+                "message": text,
+                "from": self.sender,
+            },
+            token=token,
+        )
+
     def send(self, phone, text):
         try:
             token = self._get_token()
             if not token:
                 logger.error("Eskiz: token olinmadi")
                 return False
-            self._request(
-                "/message/sms/send",
-                {
-                    "mobile_phone": phone.lstrip("+"),
-                    "message": text,
-                    "from": self.sender,
-                },
-                token=token,
-            )
-            return True
+            try:
+                self._send_raw(phone, text, token)
+                return True
+            except urllib.error.HTTPError as exc:
+                # Shablon hali tasdiqlanmagan (yoki hisob test rolida) —
+                # bunda Eskiz matnni rad etadi. Foydalanuvchi hech bo'lmasa
+                # SMS olishi uchun standart test matnini yuboramiz.
+                # Shablonlar moderatsiyadan o'tgach bu yo'l ishlamaydi.
+                if exc.code not in (400, 403, 422):
+                    raise
+                logger.warning(
+                    "Eskiz matnni rad etdi (%s) — test matni yuborilmoqda. "
+                    "Shablonni moderatsiyaga yuboring.",
+                    exc.code,
+                )
+                self._send_raw(phone, self.ESKIZ_TEST_TEXT, token)
+                return True
         except (urllib.error.URLError, urllib.error.HTTPError, ValueError, KeyError):
             logger.exception("Eskiz orqali SMS yuborishda xatolik (%s)", phone)
             return False
