@@ -454,3 +454,18 @@ class MobileReferralReviewBridgeView(APIView):
             return Response({"detail": str(exc)}, status=400)
 
         return Response({"detail": "ok", "status": ref.status})
+
+
+class SmsStatusView(APIView):
+    """SMS sozlamalari holati — tashxis uchun.
+
+    Ro'yxatdan o'tmasdan (va SMS yubormasdan) provayder ulanganini
+    tekshirish imkonini beradi. Maxfiy qiymatlar QAYTMAYDI — faqat
+    "qo'yilganmi" degan bayroqlar.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        return Response(sms.diagnostics())

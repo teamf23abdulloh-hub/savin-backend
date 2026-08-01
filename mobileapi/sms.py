@@ -38,12 +38,37 @@ def _env(name, default=""):
     return (os.environ.get(name) or default).strip()
 
 
+def has_credentials():
+    """Eskiz kredensiallari qo'yilganmi."""
+    return bool(_env("ESKIZ_EMAIL") and _env("ESKIZ_PASSWORD"))
+
+
 def is_test_mode():
-    """Kredensiallar bo'lmasa avtomatik test rejimi."""
-    forced = _env("SMS_DEV_MODE")
-    if forced:
-        return forced.lower() in ("1", "true", "yes")
-    return not (_env("ESKIZ_EMAIL") and _env("ESKIZ_PASSWORD"))
+    """Test rejimi: SMS yuborilmaydi, kod javobda `dev_otp` bo'lib qaytadi.
+
+    Qoida: kredensiallar bo'lmasa — har doim test rejimi. Kredensiallar bor
+    bo'lsa haqiqiy rejim; uni faqat `SMS_DEV_MODE=True` bilan ATAYLAB
+    o'chirish mumkin (masalan xarajatni to'xtatish kerak bo'lsa).
+
+    Ilgari `SMS_DEV_MODE` ning istalgan qiymati (jumladan "False") ustun
+    turardi va kredensiallar qo'yilgani bilan SMS ketmay qolardi.
+    """
+    if not has_credentials():
+        return True
+    return _env("SMS_DEV_MODE").lower() in ("1", "true", "yes")
+
+
+def diagnostics():
+    """SMS sozlamalari holati — tashxis uchun (maxfiy qiymatlarsiz)."""
+    return {
+        "has_credentials": has_credentials(),
+        "test_mode": is_test_mode(),
+        "provider": "eskiz" if not is_test_mode() else "console",
+        "sender": _env("ESKIZ_SENDER", "4546"),
+        "email_set": bool(_env("ESKIZ_EMAIL")),
+        "password_set": bool(_env("ESKIZ_PASSWORD")),
+        "sms_dev_mode_raw": _env("SMS_DEV_MODE") or None,
+    }
 
 
 # ---------------------------------------------------------------------------

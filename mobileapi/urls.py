@@ -14,6 +14,7 @@ from mobileapi.views import (
     MobileReferralStatusView,
     MobileTransactionStatsView,
     MobileTransactionView,
+    SmsStatusView,
 )
 
 # Barcha yo'llar config/urls.py da "api/v1/mobile/" ostida ulanadi.
@@ -41,6 +42,9 @@ urlpatterns = [
     # Referal mukofot so'rovi
     path("referral/request/", MobileReferralRequestView.as_view(), name="mobile-referral-request"),
     path("referral/status/", MobileReferralStatusView.as_view(), name="mobile-referral-status"),
+    # SMS sozlamalari holati (tashxis)
+    path("sms-status/", SmsStatusView.as_view(), name="mobile-sms-status"),
+
     # Admin panel qarori (tasdiqlash/rad etish) shu yerga qaytadi (bridge)
     path("bridge/referral-review/", MobileReferralReviewBridgeView.as_view(), name="mobile-referral-review-bridge"),
 ]
