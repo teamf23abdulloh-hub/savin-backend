@@ -59,15 +59,25 @@ def is_test_mode():
 
 
 def diagnostics():
-    """SMS sozlamalari holati — tashxis uchun (maxfiy qiymatlarsiz)."""
+    """SMS sozlamalari holati — tashxis uchun (maxfiy QIYMATLAR qaytmaydi)."""
+    # Muhitda "ESKIZ" so'zi bor o'zgaruvchilarning faqat NOMLARI —
+    # nomda ko'rinmas belgi yoki xato bo'lsa shu yerdan bilinadi.
+    found = {}
+    for name, value in os.environ.items():
+        if "ESKIZ" in name.upper():
+            found[repr(name)] = len((value or "").strip())
+
+    email = _env("ESKIZ_EMAIL")
     return {
         "has_credentials": has_credentials(),
         "test_mode": is_test_mode(),
         "provider": "eskiz" if not is_test_mode() else "console",
         "sender": _env("ESKIZ_SENDER", "4546"),
-        "email_set": bool(_env("ESKIZ_EMAIL")),
+        "email_set": bool(email),
         "password_set": bool(_env("ESKIZ_PASSWORD")),
         "sms_dev_mode_raw": _env("SMS_DEV_MODE") or None,
+        # Nom -> qiymat uzunligi (qiymatning o'zi emas)
+        "eskiz_env_names": found or "topilmadi",
     }
 
 
