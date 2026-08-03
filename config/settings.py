@@ -21,6 +21,7 @@ Shu tufayli admin panel kodi deyarli o'zgarishsiz qoldi.
 """
 
 import os
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -28,6 +29,52 @@ import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _load_env_file(path):
+    """`.env` faylini muhitga yuklaydi (tashqi kutubxonasiz).
+
+    Lokal ishlashda SMS provayder kredensiallari (ESKIZ_EMAIL/ESKIZ_PASSWORD)
+    kabi maxfiy qiymatlarni terminalga har safar qo'lda yozish shart emas —
+    `backend/.env` fayliga yozib qo'yish kifoya. Namuna: `.env.example`.
+
+    Qoidalar:
+      * haqiqiy muhit o'zgaruvchisi USTUN — fayl uni hech qachon bosib
+        o'tmaydi (Railway/Render'dagi qiymatlar o'z kuchida qoladi);
+      * `#` bilan boshlangan satrlar va bo'sh satrlar tashlab yuboriladi;
+      * `export FOO=bar` shakli ham tushuniladi;
+      * qiymat atrofidagi qo'shtirnoq/apostrof olib tashlanadi.
+    """
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return
+
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):]
+        name, _, value = line.partition("=")
+        name = name.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        # Mavjud (haqiqiy) muhit o'zgaruvchisini bosib o'tmaymiz
+        if name and not os.environ.get(name):
+            os.environ[name] = value
+
+
+# `backend/.env` va loyiha ildizidagi `.env` — ikkalasi ham o'qiladi.
+# Birinchi o'qilgan qiymat ustun turgani uchun backendniki kuchliroq.
+_load_env_file(BASE_DIR / ".env")
+_load_env_file(BASE_DIR.parent / ".env")
+
+# Testlar ishlayaptimi. Kerak: test paytida haqiqiy SMS kredensiallari
+# ishlatilmasin va tashqi provayderga chinakam so'rov ketmasin
+# (`mobileapi.sms._from_file` shuni tekshiradi).
+TESTING = "test" in sys.argv or "pytest" in sys.modules
 
 # DEBUG endi standart holatda O'CHIQ. Lokal ishlashda `DJANGO_DEBUG=True`
 # qo'yiladi. Avval standart True edi — agar hostingda bu o'zgaruvchi qo'yilmay

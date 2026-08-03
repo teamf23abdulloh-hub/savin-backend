@@ -52,11 +52,42 @@ class LoginSerializer(serializers.Serializer):
         if user.is_blocked:
             raise serializers.ValidationError("Foydalanuvchi bloklangan.")
         if user.is_2fa_enabled:
-            if not attrs.get("otp_code"):
-                raise serializers.ValidationError({"otp_code": "2FA kodi talab qilinadi."})
-            # NOTE: haqiqiy OTP tekshiruvi uchun pyotp yoki SMS provayder ulanishi kerak
+            self._check_2fa(user, attrs.get("otp_code"))
         attrs["user"] = user
         return attrs
+
+    def _check_2fa(self, user, otp_code):
+        """SMS orqali ikki bosqichli tasdiqlash.
+
+        Ilgari bu yerda faqat "kod bo'sh emasmi" tekshirilardi va HAR QANDAY
+        qiymat o'tib ketardi — ya'ni 2FA yoqilgan hisob aslida himoyalanmagan
+        edi. Endi kod `mobileapi.sms` orqali haqiqatda yuboriladi va
+        tekshiriladi (xesh, 5 daqiqa muddat, urinishlar chegarasi).
+        """
+        from mobileapi import sms
+
+        phone = (user.phone_number or "").strip()
+        if not phone:
+            # Telefon yo'q bo'lsa kodni yuborib bo'lmaydi. Bunday holatda
+            # kirishga ruxsat berish 2FA'ni mutlaqo ma'nosiz qilib qo'yardi.
+            raise serializers.ValidationError(
+                "Hisobingizda 2FA yoqilgan, lekin telefon raqami ko'rsatilmagan. "
+                "Administratorga murojaat qiling."
+            )
+
+        if not otp_code:
+            # Kodni faqat oraliq tugagan bo'lsa yuboramiz — aks holda har bir
+            # login urinishi yangi SMS (va xarajat) bo'lib ketardi.
+            wait = sms.seconds_until_resend(phone)
+            if not wait:
+                sms.create_and_send(phone)
+            raise serializers.ValidationError(
+                {"otp_code": "Telefoningizga yuborilgan tasdiqlash kodini kiriting."}
+            )
+
+        ok, error = sms.verify(phone, otp_code)
+        if not ok:
+            raise serializers.ValidationError({"otp_code": error})
 
     def get_tokens(self, user):
         refresh = RefreshToken.for_user(user)

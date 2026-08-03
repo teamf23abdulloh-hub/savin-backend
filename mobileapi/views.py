@@ -1,3 +1,4 @@
+import hmac
 import logging
 import os
 import re
@@ -46,10 +47,12 @@ def _tokens_for(user):
 
 
 class MobileRegisterView(APIView):
-    """Telefon orqali ro'yxatdan o'tish (mijoz).
+    """Telefon orqali ro'yxatdan o'tish (mijoz) va tasdiqlash kodini yuborish.
 
-    SMS dev-rejimda — javobda `dev_otp` qaytadi (000000). Foydalanuvchi bo'lmasa
-    yaratiladi, bo'lsa ismi yangilanadi (qayta kirish).
+    Foydalanuvchi bo'lmasa yaratiladi, bo'lsa ismi yangilanadi (qayta kirish).
+    Test rejimida (provayder ulanmagan) kod javobda `dev_otp` bo'lib qaytadi.
+    Shu endpoint kodni QAYTA yuborish uchun ham ishlatiladi — 60 soniyalik
+    oraliqdan tez chaqirilsa 429 va `retry_after` qaytadi.
     """
 
     permission_classes = [AllowAny]
@@ -101,13 +104,38 @@ class MobileRegisterView(APIView):
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
 
-        _otp, dev_code = sms.create_and_send(phone)
+        _otp, dev_code, sent = sms.create_and_send(phone)
+
+        # SMS ketmagan bo'lsa buni YASHIRMAYMIZ. Avval javob har doim "ok"
+        # edi va foydalanuvchi kod kiritish ekranida hech qachon kelmaydigan
+        # SMSni kutib qolardi — sabab esa faqat server logida qolardi.
+        #
+        # Istisno: `SMS_ALLOW_OTP_IN_RESPONSE` yoqilgan bo'lsa kod javobda
+        # keladi (`dev_code`) — bunda oqim uzilmaydi, foydalanuvchi kira oladi.
+        if not sent and dev_code is None:
+            # Kod yozuvi bazada qoladi, ya'ni qayta yuborish oralig'i kuchda —
+            # provayder ishlamayotganda ketma-ket urinishlar uni yanada
+            # bo'g'masin. Shuning uchun kutish vaqtini xabarda aytamiz.
+            retry_after = sms.seconds_until_resend(phone)
+            return Response(
+                {
+                    "detail": (
+                        "Tasdiqlash kodini yuborib bo'lmadi. "
+                        f"{retry_after} soniyadan keyin qayta urinib ko'ring yoki "
+                        "qo'llab-quvvatlash xizmatiga murojaat qiling."
+                    ),
+                    "sms_failed": True,
+                    "retry_after": retry_after,
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         payload = {
             "phone_number": phone,
             "is_new": created,
             "test_mode": sms.is_test_mode(),
             "expires_in": PhoneOtp.TTL_SECONDS,
+            "resend_after": PhoneOtp.RESEND_COOLDOWN_SECONDS,
         }
         # Kod faqat test rejimida qaytadi — haqiqiy rejimda hech qachon
         if dev_code is not None:
@@ -462,10 +490,24 @@ class SmsStatusView(APIView):
     Ro'yxatdan o'tmasdan (va SMS yubormasdan) provayder ulanganini
     tekshirish imkonini beradi. Maxfiy qiymatlar QAYTMAYDI — faqat
     "qo'yilganmi" degan bayroqlar.
+
+    Lokal ishlashda (DEBUG=True) ochiq. Production'da esa yopiq: javobda
+    muhit o'zgaruvchilari nomlari va SMS matni bor, ular begonaga kerak
+    emas. Ochish uchun `SMS_STATUS_TOKEN` qo'yiladi va so'rovga
+    `?token=...` (yoki `X-Sms-Status-Token` sarlavhasi) qo'shiladi.
     """
 
     permission_classes = [AllowAny]
     authentication_classes = []
 
     def get(self, request):
+        if not settings.DEBUG:
+            expected = os.environ.get("SMS_STATUS_TOKEN", "").strip()
+            given = (
+                request.headers.get("X-Sms-Status-Token")
+                or request.query_params.get("token")
+                or ""
+            ).strip()
+            if not expected or not hmac.compare_digest(given, expected):
+                return Response({"detail": "Ruxsat yo'q."}, status=403)
         return Response(sms.diagnostics())

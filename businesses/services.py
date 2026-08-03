@@ -165,7 +165,8 @@ def send_business_decision_sms(business, approved=True):
     """Biznes tasdiqlanganda egasiga SMS yuboradi (panel havolasi bilan).
 
     SMS provayder ulanmagan bo'lsa (test rejimi) xabar faqat logga yoziladi —
-    tasdiqlash jarayoni baribir to'xtamaydi.
+    tasdiqlash jarayoni baribir to'xtamaydi. `sms.send_sms` istisno
+    ko'tarmaydi, xatoni logga yozib `False` qaytaradi.
     """
     from mobileapi import sms
 
@@ -182,13 +183,7 @@ def send_business_decision_sms(business, approved=True):
         + (f"Login: {login}" if login else "")
     ).strip()
 
-    try:
-        return sms.get_provider().send(phone, text)
-    except Exception:  # SMS xatosi tasdiqlashni to'xtatmasin
-        import logging
-
-        logging.getLogger(__name__).exception("Tasdiqlash SMS yuborilmadi (%s)", phone)
-        return False
+    return sms.send_sms(phone, text)
 
 
 def send_cashier_created_sms(cashier, password=""):
@@ -205,13 +200,7 @@ def send_cashier_created_sms(cashier, password=""):
         + (f" Parol: {password}" if password else "")
     )
 
-    try:
-        return sms.get_provider().send(phone, text)
-    except Exception:
-        import logging
-
-        logging.getLogger(__name__).exception("Kassir SMS yuborilmadi (%s)", phone)
-        return False
+    return sms.send_sms(phone, text)
 
 
 def send_application_rejected_sms(application, reason=""):
@@ -230,10 +219,4 @@ def send_application_rejected_sms(application, reason=""):
         + " Savollar bo'lsa: @savin_biznes"
     )
 
-    try:
-        return sms.get_provider().send(phone, text)
-    except Exception:
-        import logging
-
-        logging.getLogger(__name__).exception("Rad etish SMS yuborilmadi (%s)", phone)
-        return False
+    return sms.send_sms(phone, text)

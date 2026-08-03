@@ -100,10 +100,85 @@ python manage.py seed_demo --login boss --password 'Zor2024!' --email boss@savin
 | `SECURE_SSL_REDIRECT` | Yo'q | Standart `False` — Railway healthcheck buzilmasligi uchun. |
 | `SEED` | **Yo'q** | **Eskirgan va e'tiborga olinmaydi.** Variables'dan o'chiring. |
 | `ALLOW_SQLITE_IN_PRODUCTION` | Yo'q | Faqat ataylab ma'lumot yo'qotish kerak bo'lsa. |
+| `ESKIZ_EMAIL` / `ESKIZ_PASSWORD` | Ha (SMS uchun) | Bo'lmasa SMS ketmaydi — pastdagi 5-bo'limga qarang. |
+| `ESKIZ_SENDER` | Yo'q | Standart `4546`. |
+| `SMS_OTP_TEMPLATE` | Yo'q | Eskiz'da tasdiqlangan matn. `{code}` — kod o'rni. |
+| `SMS_DEV_MODE` | Yo'q | `True` — kredensiallar bor bo'lsa ham SMS yubormaslik. |
+| `SMS_STATUS_TOKEN` | Yo'q | `/api/v1/mobile/sms-status/` tashxisini production'da ochish kaliti. |
+
+Lokal ishlashda bularni terminalga yozish shart emas: `backend/.env` fayliga
+qo'ying (namuna — `backend/.env.example`). Haqiqiy muhit o'zgaruvchisi har doim
+`.env` dan ustun turadi, shuning uchun Railway'dagi qiymatlar buzilmaydi.
 
 ---
 
-## 5. Media fayllar haqida ogohlantirish
+## 5. SMS (Eskiz.uz)
+
+SMS uchta joyda ishlatiladi: mobil ilovaga kirish kodi (OTP), biznes arizasi
+tasdiqlangani/rad etilgani, kassir qo'shilganda kirish ma'lumotlari.
+
+**Rejimlar.** `ESKIZ_EMAIL` va `ESKIZ_PASSWORD` bo'lmasa — *test rejimi*: SMS
+ketmaydi, kod API javobida `dev_otp` bo'lib qaytadi va ilovada avtomatik
+to'ldiriladi. Ikkalasi qo'yilsa — SMS haqiqatda yuboriladi.
+
+### ⚠️ Hozirgi vaqtinchalik holat (Eskiz tiketi kutilmoqda)
+
+Eskiz hisobi hali **`test` rolida** va tasdiqlangan shablon yo'q — Eskiz o'z
+matnimizni rad etadi (`"Number is forbidden"`, `"faqat test matnini yuborish
+mumkin"`). Shu davr uchun ikkita vaqtinchalik yechim qo'yilgan:
+
+1. **Kredensiallar `mobileapi/sms_credentials.py` faylida** — `.env` da emas.
+   Sabab: hech qanday muhit sozlamasisiz hamma joyda ishlashi kerak.
+   ⚠️ Bu fayl `.env` dan farqli o'laroq **git'ga tushadi**.
+2. **`ESKIZ_TEST_TEXT_FALLBACK = "True"`** — Eskiz o'z matnimizni rad etsa,
+   uning standart test matni (`"Bu Eskiz dan test"`) yuboriladi. Foydalanuvchi
+   kodni emas, shu matnni oladi, lekin **SMS jismonan keladi**. Barcha SMS
+   turlariga tegishli: kirish kodi, ariza tasdiqlangani, kassir qo'shilgani.
+3. **`SMS_ALLOW_OTP_IN_RESPONSE = "True"`** — SMS ketmasa tasdiqlash kodi API
+   javobida qaytadi, ilova uni o'zi to'ldiradi. Natijada ro'yxatdan o'tish
+   **barcha raqamlar uchun xatosiz** ishlaydi.
+   ⚠️ Kod javobda ochiq kelgani uchun **istalgan odam istalgan raqam nomidan
+   kira oladi**.
+
+> Eskiz test rolida raqamlarni ham cheklaydi: sinovda ba'zi raqamlar
+> `"Number is forbidden"` bilan qaytdi. Bunday raqamga test matni ham
+> bormaydi — bu Eskiz tomonidagi cheklov.
+
+**Tiket hal bo'lgach (hammasini bajaring):**
+
+```
+1) sms_credentials.py -> SMS_ALLOW_OTP_IN_RESPONSE = ""   (zaxira yo'lni yopish)
+2) sms_credentials.py -> ESKIZ_TEST_TEXT_FALLBACK  = ""   (haqiqiy matn ketsin)
+3) ESKIZ_EMAIL / ESKIZ_PASSWORD -> .env yoki Railway Variables ga ko'chirish,
+   sms_credentials.py dagilarini "" qilish
+4) Eskiz kabinetidan yashirin kalitni YANGILASH (git tarixida qolgani uchun)
+```
+
+Muhit o'zgaruvchisi fayldan ustun, shuning uchun 2-qadamda kodni o'zgartirish
+shart emas. `python manage.py sms_test` har bir qadamdan keyin holatni
+ko'rsatadi.
+
+**Tekshirish:**
+
+```bash
+python manage.py sms_test                  # sozlamalar + Eskiz bilan aloqa
+python manage.py sms_test +998901234567    # sinov SMS ham yuboradi
+```
+
+Buyruq sababni aniq ajratadi: kredensiallar muhitga tushmaganmi, email/parol
+noto'g'rimi, yoki matn moderatsiyadan o'tmaganmi.
+
+**Matn moderatsiyasi.** Eskiz faqat tasdiqlangan shablonni yuboradi va matn
+tasdiqlangan variantga **aynan** mos kelishi kerak. Moderatsiyada matn
+o'zgarsa, kodni qayta joylashtirmasdan `SMS_OTP_TEMPLATE` orqali moslash
+mumkin. Shablon tasdiqlanmagan bo'lsa Eskiz 400 qaytaradi, ro'yxatdan o'tish
+so'rovi esa `503` va tushunarli xabar bilan tugaydi (ilgari "kod yuborildi"
+deb ko'rsatilardi, foydalanuvchi esa kelmaydigan SMSni kutib qolardi) — aniq
+sabab server logida, Eskiz javobi bilan birga yoziladi.
+
+---
+
+## 6. Media fayllar haqida ogohlantirish
 
 Biznes logolari, avatarlar va QR rasmlar `MEDIA_ROOT` ichiga yoziladi va endi
 production'da ham to'g'ri ko'rsatiladi (ilgari 404 qaytarardi).
