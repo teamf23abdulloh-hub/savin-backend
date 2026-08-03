@@ -539,41 +539,22 @@ class CashierMeView(APIView):
         )
 
     def patch(self, request):
-        """Kassir o'z ma'lumotlarini o'zgartiradi (ism, telefon, parol).
+        """Kassir o'z ma'lumotlarini O'ZGARTIRA OLMAYDI.
 
-        Login, biznes va kassir ID o'zgarmaydi — ular tizim tomonidan
-        biriktiriladi va kirish/hisobot yaxlitligiga bog'liq.
+        Kassirning ismi, telefoni, logini va paroli faqat biznes egasi
+        tomonidan ("Kassirlar" bo'limi orqali) boshqariladi. Bu cheklov
+        frontend yashirgan bo'lsa ham server tomonda majburlanadi — aks holda
+        API'ga to'g'ridan-to'g'ri so'rov yuborib o'zgartirsa bo'lardi.
         """
-        cashier = get_object_or_404(Cashier, user=request.user)
-        user = request.user
-
-        full_name = request.data.get("full_name")
-        if full_name is not None:
-            full_name = str(full_name).strip()
-            if not full_name:
-                return Response({"full_name": ["Ism bo'sh bo'lmasin."]}, status=400)
-            cashier.full_name = full_name
-
-        phone = request.data.get("phone")
-        if phone is not None:
-            cashier.phone = str(phone).strip()
-            user.phone_number = cashier.phone or None
-            user.save(update_fields=["phone_number"])
-
-        password = request.data.get("password")
-        if password:
-            if len(str(password)) < 6:
-                return Response(
-                    {"password": ["Parol kamida 6 ta belgidan iborat bo'lsin."]},
-                    status=400,
+        return Response(
+            {
+                "detail": (
+                    "Kassir o'z ma'lumotlarini o'zgartira olmaydi. "
+                    "O'zgartirish uchun biznes egasiga murojaat qiling."
                 )
-            user.set_password(str(password))
-            user.save(update_fields=["password"])
-            # Biznes egasi panelida ko'rinadigan nusxa ham yangilanadi
-            cashier.password_plain = str(password)
-
-        cashier.save()
-        return self.get(request)
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
 
 class CashierDashboardView(APIView):
