@@ -105,6 +105,11 @@ def approve_application(application, reviewer=None):
     # o'z panelida tahrirlashi mumkin.
     create_default_services(business)
 
+    # Landing arizasida kiritilgan chegirma "Chegirmalar" sahifasida darhol
+    # karta bo'lib ko'rinishi uchun Standart chegirmani yaratamiz (ilgari u
+    # faqat shartnoma foizi sifatida qolib, kartalar ro'yxatida chiqmasdi).
+    _create_default_discount(business, application)
+
     UserNotification.objects.create(
         user=owner,
         notification_type=UserNotification.NotificationType.SYSTEM,
@@ -119,6 +124,120 @@ def approve_application(application, reviewer=None):
     send_business_decision_sms(business, approved=True)
 
     return business
+
+
+# ---------------------------------------------------------------------------
+# Profil o'zgartirish so'rovlari (biznes egasi -> admin tasdiqlaydi)
+# ---------------------------------------------------------------------------
+
+_PROFILE_FIELD_LABELS = {
+    "name": "Biznes nomi",
+    "description": "Tavsif",
+    "full_address": "Manzil",
+    "phone_number": "Telefon",
+    "email": "Email",
+    "work_hours_from": "Ochilish vaqti",
+    "work_hours_to": "Yopilish vaqti",
+}
+
+
+def profile_request_body(changes):
+    """O'zgarishlarni admin o'qishi uchun qisqa matnga aylantiradi."""
+    parts = []
+    for field, value in changes.items():
+        label = _PROFILE_FIELD_LABELS.get(field, field)
+        parts.append(f"{label}: {value}")
+    return "; ".join(parts) if parts else "O'zgarish yo'q"
+
+
+def _parse_time(value):
+    """"HH:MM" -> datetime.time (bo'sh/xato bo'lsa None)."""
+    from datetime import datetime
+
+    text = (value or "").strip()
+    if not text:
+        return None
+    for fmt in ("%H:%M", "%H:%M:%S"):
+        try:
+            return datetime.strptime(text, fmt).time()
+        except ValueError:
+            continue
+    return None
+
+
+def apply_profile_review(change_request, action, reject_reason=""):
+    """Profil o'zgartirish so'rovini tasdiqlaydi/rad etadi.
+
+    Tasdiqlanganda o'zgarishlar `Business`ga (ish vaqti esa `Application`ga)
+    qo'llanadi. Ikkala holatda ham biznes egasiga bildirishnoma boradi.
+    """
+    business = change_request.business
+    changes = change_request.changes or {}
+
+    if action == "approve":
+        biz_fields = []
+        for field in ("name", "description", "full_address", "phone_number", "email"):
+            if field in changes:
+                setattr(business, field, changes[field])
+                biz_fields.append(field)
+        if biz_fields:
+            business.save(update_fields=biz_fields)
+
+        # Ish vaqti Application'da
+        app = business.application
+        if app and ("work_hours_from" in changes or "work_hours_to" in changes):
+            if "work_hours_from" in changes:
+                app.work_hours_from = _parse_time(changes["work_hours_from"])
+            if "work_hours_to" in changes:
+                app.work_hours_to = _parse_time(changes["work_hours_to"])
+            app.save(update_fields=["work_hours_from", "work_hours_to"])
+
+        change_request.status = change_request.Status.APPROVED
+        title = "Profil o'zgarishi tasdiqlandi"
+        body = "So'ralgan profil o'zgarishlari qo'llandi: " + profile_request_body(changes)
+    else:
+        change_request.status = change_request.Status.REJECTED
+        change_request.reason = reject_reason or ""
+        title = "Profil o'zgarishi rad etildi"
+        body = "Profil o'zgartirish so'rovingiz rad etildi."
+        if reject_reason:
+            body += f" Sabab: {reject_reason}"
+
+    change_request.reviewed_at = timezone.now()
+    change_request.save()
+
+    from notifications.models import UserNotification
+
+    UserNotification.objects.create(
+        user=change_request.requested_by,
+        notification_type=UserNotification.NotificationType.SYSTEM,
+        title=title,
+        body=body,
+    )
+    return change_request
+
+
+def _create_default_discount(business, application):
+    """Ariza foizidan Standart chegirma kartasini yaratadi (bo'lmasa).
+
+    Import funksiya ichida — `businesses` yuklanayotganda `discounts` hali
+    tayyor bo'lmasligi mumkin.
+    """
+    from discounts.models import Discount
+
+    percent = int(application.discount_percent or 0)
+    if percent < 1:
+        return
+    Discount.objects.get_or_create(
+        business=business,
+        category=Discount.Category.STANDARD,
+        defaults=dict(
+            description=application.get_discount_type_display() or "Barcha xaridlar uchun",
+            percent=min(percent, 100),
+            min_purchase=application.min_purchase_amount or 0,
+            is_active=True,
+        ),
+    )
 
 
 def reject_application(application, reason="", reviewer=None):

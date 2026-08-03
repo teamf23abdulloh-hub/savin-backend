@@ -64,6 +64,43 @@ class CustomerNotification(models.Model):
         return f"{self.title} -> {self.user_id}"
 
 
+class RedeemCode(models.Model):
+    """Kassaga QR o'rniga aytiladigan qisqa 4 xonali kod.
+
+    QR ishlamasa mijoz shu kodni kassirga aytadi. Kod har 5 daqiqada
+    yangilanadi va shu vaqt ichida FAOL kodlar orasida noyob bo'ladi —
+    shuning uchun kassir uni bir qiymatga bog'lab bo'ladi. Telefon raqami
+    o'rniga ishlatiladi (raqam maxfiyroq va o'zgarmas edi).
+    """
+
+    TTL_SECONDS = 5 * 60
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="redeem_code",
+    )
+    code = models.CharField(max_length=4, db_index=True)
+    expires_at = models.DateTimeField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.code} -> {self.user_id}"
+
+    @property
+    def is_expired(self):
+        from django.utils import timezone
+
+        return timezone.now() >= self.expires_at
+
+    @property
+    def seconds_left(self):
+        from django.utils import timezone
+
+        left = (self.expires_at - timezone.now()).total_seconds()
+        return int(left) if left > 0 else 0
+
+
 class PhoneOtp(models.Model):
     """Telefon raqamini SMS kod bilan tasdiqlash.
 

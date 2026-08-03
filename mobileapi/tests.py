@@ -631,6 +631,72 @@ class SmsStatusEndpointTests(TestCase):
         self.assertNotIn("test@savin.uz", body)
 
 
+class RedeemCodeTests(TestCase):
+    """QR o'rniga aytiladigan 4 xonali kod."""
+
+    def setUp(self):
+        self.url = reverse("mobile-redeem-code")
+        self.user = User.objects.create_user(
+            username="c@customer.savin.local",
+            email="c@customer.savin.local",
+            password="pass12345",
+            phone_number=PHONE,
+            role=User.Role.CUSTOMER,
+        )
+
+    def _auth(self):
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        token = RefreshToken.for_user(self.user).access_token
+        self.client.defaults["HTTP_AUTHORIZATION"] = f"Bearer {token}"
+
+    def test_kod_4_xonali_va_barqaror(self):
+        self._auth()
+        r1 = self.client.get(self.url)
+        self.assertEqual(r1.status_code, 200)
+        code = r1.json()["code"]
+        self.assertRegex(code, r"^\d{4}$")
+        # Muddati tugamaguncha o'sha kod qaytadi
+        r2 = self.client.get(self.url)
+        self.assertEqual(r2.json()["code"], code)
+
+    def test_kod_yangilanadi(self):
+        from mobileapi.models import RedeemCode
+        from mobileapi.views import get_or_refresh_redeem_code
+
+        rc = get_or_refresh_redeem_code(self.user)
+        old = rc.code
+        # Muddatini o'tkazamiz
+        rc.expires_at = timezone.now() - timedelta(seconds=1)
+        rc.save(update_fields=["expires_at"])
+        rc2 = get_or_refresh_redeem_code(self.user)
+        self.assertGreater(rc2.expires_at, timezone.now())
+        # Bitta foydalanuvchida bitta yozuv
+        self.assertEqual(RedeemCode.objects.filter(user=self.user).count(), 1)
+        _ = old  # kod bir xil ham chiqishi mumkin — muhimi muddat yangilandi
+
+    def test_kassir_kod_orqali_mijozni_topadi(self):
+        from discounts.views import find_customer_by_qr
+        from mobileapi.views import get_or_refresh_redeem_code
+
+        rc = get_or_refresh_redeem_code(self.user)
+        found, err = find_customer_by_qr(rc.code)
+        self.assertIsNone(err)
+        self.assertEqual(found, self.user)
+
+    def test_muddati_tugagan_kod_topilmaydi(self):
+        from discounts.views import find_customer_by_qr
+        from mobileapi.models import RedeemCode
+
+        RedeemCode.objects.create(
+            user=self.user, code="1234",
+            expires_at=timezone.now() - timedelta(seconds=1),
+        )
+        found, err = find_customer_by_qr("1234")
+        self.assertIsNone(found)
+        self.assertIn("muddati", err)
+
+
 class TwoFactorLoginTests(TestCase):
     """Panel logini: 2FA yoqilgan bo'lsa kod HAQIQATDA tekshiriladi."""
 

@@ -282,3 +282,36 @@ class Cashier(models.Model):
 
     def __str__(self):
         return f"{self.full_name} @ {self.business.name}"
+
+
+class ProfileChangeRequest(models.Model):
+    """Biznes egasi profil ma'lumotlarini o'zgartirishni so'raydi -> Admin tasdiqlaydi.
+
+    Biznes egasi o'z profilini (nomi, manzil, telefon, ish vaqti va h.k.)
+    to'g'ridan-to'g'ri o'zgartira olmaydi — o'zgarishlar `changes` (JSON) da
+    saqlanadi va admin tasdiqlagach `Business`ga (va ish vaqti uchun
+    `Application`ga) qo'llanadi.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Ko'rib chiqilmoqda"
+        APPROVED = "approved", "Tasdiqlangan"
+        REJECTED = "rejected", "Rad etilgan"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    business = models.ForeignKey(
+        Business, on_delete=models.CASCADE, related_name="profile_requests"
+    )
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    # Taklif qilingan o'zgarishlar: {"name": "...", "phone_number": "...", ...}
+    changes = models.JSONField(default=dict)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    reason = models.TextField(blank=True)  # rad etilganda sabab
+    reviewed_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.business.name}: profil o'zgarishi ({self.status})"

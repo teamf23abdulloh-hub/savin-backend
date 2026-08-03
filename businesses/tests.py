@@ -165,3 +165,61 @@ class ApplicationWizardTestCase(APITestCase):
         self.assertIsNotNone(application.applicant)
         self.assertEqual(application.applicant.email, "yangi@biznes.uz")
         self.assertEqual(application.applicant.role, User.Role.BUSINESS_OWNER)
+
+
+class ProfileChangeApprovalTests(APITestCase):
+    """Profil o'zgarishi to'g'ridan saqlanmaydi — admin tasdiqlaydi."""
+
+    def setUp(self):
+        self.category = Category.objects.create(name="Kafe2", slug="kafe2")
+        self.owner = User.objects.create_user(
+            username="own2@savin.uz", email="own2@savin.uz",
+            password="pass12345", role=User.Role.BUSINESS_OWNER,
+        )
+        self.application = Application.objects.create(
+            business_name="Old Nom", category=self.category, discount_percent=10,
+        )
+        from businesses.models import Business
+        self.business = Business.objects.create(
+            owner=self.owner, application=self.application, name="Old Nom",
+            category=self.category, phone_number="+998901112233", is_active=True,
+        )
+        self.client.force_authenticate(self.owner)
+
+    def test_patch_togridan_saqlanmaydi_sorov_boradi(self):
+        resp = self.client.patch(
+            "/api/v1/my-business/", {"name": "Yangi Nom"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 202)
+        self.assertTrue(resp.json()["pending"])
+        self.business.refresh_from_db()
+        self.assertEqual(self.business.name, "Old Nom")  # o'zgarmadi
+        from businesses.models import ProfileChangeRequest
+        cr = ProfileChangeRequest.objects.get(business=self.business)
+        self.assertEqual(cr.changes["name"], "Yangi Nom")
+
+    def test_tasdiqlangach_qollanadi(self):
+        self.client.patch(
+            "/api/v1/my-business/",
+            {"name": "Yangi Nom", "work_hours_from": "09:00", "work_hours_to": "21:00"},
+            format="json",
+        )
+        from businesses.models import ProfileChangeRequest
+        from businesses.services import apply_profile_review
+        cr = ProfileChangeRequest.objects.get(business=self.business)
+        apply_profile_review(cr, "approve")
+
+        self.business.refresh_from_db()
+        self.application.refresh_from_db()
+        self.assertEqual(self.business.name, "Yangi Nom")
+        self.assertEqual(self.application.work_hours_from.strftime("%H:%M"), "09:00")
+        self.assertEqual(self.application.work_hours_to.strftime("%H:%M"), "21:00")
+
+    def test_ozgarish_yoq_bolsa_sorov_yaratilmaydi(self):
+        resp = self.client.patch(
+            "/api/v1/my-business/", {"name": "Old Nom"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.json()["pending"])
+        from businesses.models import ProfileChangeRequest
+        self.assertEqual(ProfileChangeRequest.objects.count(), 0)

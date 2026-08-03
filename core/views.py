@@ -40,7 +40,12 @@ from .models import (
     Status,
     TransactionStatus,
 )
-from .bridge import notify_main_backend, review_discount_on_main, review_referral_on_main
+from .bridge import (
+    notify_main_backend,
+    review_business_change_on_main,
+    review_discount_on_main,
+    review_referral_on_main,
+)
 from .inbox import (
     receive_business_application,
     receive_business_event,
@@ -466,13 +471,15 @@ class BusinessRequestApproveView(APIView):
         req.reviewed_at = timezone.now()
         req.save(update_fields=["status", "reviewed_at"])
 
-        # Admin-tomondagi biznes kartasida ham foizni yangilab qo'yamiz
-        if req.new_percent:
+        # Admin-tomondagi biznes kartasida ham foizni yangilab qo'yamiz —
+        # FAQAT asosiy foiz so'rovi bo'lsa (karta/profil so'rovlari headline
+        # foizga tegmaydi).
+        if req.kind == "discount_request" and req.new_percent:
             req.business.discount_percent = req.new_percent
             req.business.save(update_fields=["discount_percent"])
 
-        # Asosiy backend: so'rov holati + biznes egasiga bildirishnoma
-        review_discount_on_main(req.source_id, "approve")
+        # Asosiy backend: so'rov turiga qarab qo'llash + biznes egasiga bildirishnoma
+        review_business_change_on_main(req.kind, req.source_id, "approve")
 
         return Response(BusinessRequestSerializer(req).data)
 
@@ -499,7 +506,7 @@ class BusinessRequestRejectView(APIView):
         req.reviewed_at = timezone.now()
         req.save(update_fields=["status", "reject_reason", "reviewed_at"])
 
-        review_discount_on_main(req.source_id, "reject", reason=reason)
+        review_business_change_on_main(req.kind, req.source_id, "reject", reason=reason)
 
         return Response(BusinessRequestSerializer(req).data)
 

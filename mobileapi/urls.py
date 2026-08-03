@@ -14,6 +14,7 @@ from mobileapi.views import (
     MobileReferralStatusView,
     MobileTransactionStatsView,
     MobileTransactionView,
+    RedeemCodeView,
     SmsStatusView,
 )
 
@@ -32,6 +33,9 @@ urlpatterns = [
     # Hamyon (tranzaksiyalar) — MUHIM: stats yo'li umumiy yo'ldan oldin turishi kerak
     path("transactions/stats/", MobileTransactionStatsView.as_view(), name="mobile-tx-stats"),
     path("transactions/", MobileTransactionView.as_view(), name="mobile-transactions"),
+
+    # Kassaga aytiladigan 4 xonali kod (QR o'rniga)
+    path("redeem-code/", RedeemCodeView.as_view(), name="mobile-redeem-code"),
 
     # Bildirishnomalar
     path("notifications/", MobileNotificationListView.as_view(), name="mobile-notifications"),

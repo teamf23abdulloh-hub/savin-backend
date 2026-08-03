@@ -71,6 +71,42 @@ def review_referral_on_main(source_id, action, reason=""):
     return True
 
 
+def review_profile_on_main(source_id, action, reason=""):
+    """Profil o'zgartirish so'rovi natijasini platforma tomoniga qo'llaydi.
+
+    Tasdiqlansa o'zgarishlar biznes profiliga yoziladi, rad etilsa biznes
+    egasiga sabab bilan bildirishnoma boradi.
+    """
+    from businesses.models import ProfileChangeRequest
+    from businesses.services import apply_profile_review
+
+    if not source_id or action not in ("approve", "reject"):
+        return False
+    try:
+        req = ProfileChangeRequest.objects.get(pk=source_id)
+    except (ProfileChangeRequest.DoesNotExist, ValueError, TypeError):
+        logger.warning("Profil so'rovi topilmadi (id=%s)", source_id)
+        return False
+    if req.status != ProfileChangeRequest.Status.PENDING:
+        logger.warning("Profil so'rovi allaqachon ko'rib chiqilgan (id=%s)", source_id)
+        return False
+
+    apply_profile_review(req, action, reject_reason=reason)
+    return True
+
+
+def review_business_change_on_main(kind, source_id, action, reason=""):
+    """So'rov turiga qarab to'g'ri platforma funksiyasini chaqiradi.
+
+    Admin panel "So'rovlar" bo'limi barcha turdagi so'rovlar (chegirma foizi,
+    chegirma kartasi, profil) uchun bitta tasdiqlash/rad tugmasidan foydalanadi
+    — bu yerda `kind` bo'yicha to'g'ri oqim tanlanadi.
+    """
+    if (kind or "").startswith("profile"):
+        return review_profile_on_main(source_id, action, reason=reason)
+    return review_discount_on_main(source_id, action, reason=reason)
+
+
 def review_discount_on_main(source_id, action, reason=""):
     """Chegirma so'rovi natijasini platforma tomoniga qo'llaydi.
 

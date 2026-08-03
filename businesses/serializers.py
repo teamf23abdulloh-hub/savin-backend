@@ -307,13 +307,24 @@ class CashierSerializer(serializers.ModelSerializer):
 
 
 def cashier_email_from_login(login):
-    """Login'dan ichki email hosil qiladi (auth email orqali ishlaydi)."""
-    slug = re.sub(r"[^a-z0-9._-]", "", (login or "").strip().lower())
-    return f"{slug}@kassir.savin.local"
+    """Login'dan `<slug>@savin.uz` email hosil qiladi (kassir shu bilan kiradi).
+
+    Kirish "baxtiyor" ham, "baxtiyor@savin.uz" ham bo'lishi mumkin — ikkalasi
+    ham bir xil natijaga keladi (idempotent), shuning uchun uni bir necha marta
+    chaqirish xavfsiz.
+    """
+    local = (login or "").strip().lower().split("@")[0]
+    slug = re.sub(r"[^a-z0-9._-]", "", local)
+    return f"{slug}@savin.uz"
 
 
 class CashierCreateSerializer(serializers.Serializer):
-    """Kassir qo'shish: Ism Familiya, telefon, login va parol."""
+    """Kassir qo'shish: Ism Familiya, telefon, login va parol.
+
+    Login oddiy matn bo'lishi kifoya — raqam yoki maxsus belgi qo'shish
+    MAJBURIY EMAS. `@savin.uz` avtomatik qo'shiladi (biznes egasi faqat nom
+    qismini yozadi), natijada kassir `<login>@savin.uz` bilan kiradi.
+    """
 
     full_name = serializers.CharField()
     phone = serializers.CharField(required=False, allow_blank=True)
@@ -322,16 +333,20 @@ class CashierCreateSerializer(serializers.Serializer):
     is_active = serializers.BooleanField(required=False, default=True)
 
     def validate_login(self, value):
-        value = (value or "").strip()
-        if not re.fullmatch(r"[A-Za-z0-9._-]{3,}", value):
+        local = (value or "").strip().lower().split("@")[0]
+        slug = re.sub(r"[^a-z0-9._-]", "", local)
+        if len(slug) < 2:
             raise serializers.ValidationError(
-                "Login kamida 3 ta belgidan iborat bo'lib, faqat harf, raqam va . _ - dan tashkil topsin."
+                "Login kamida 2 ta harfdan iborat bo'lsin (faqat harf yetarli)."
             )
-        if Cashier.objects.filter(login__iexact=value).exists():
+        email = f"{slug}@savin.uz"
+        if (
+            Cashier.objects.filter(login__iexact=email).exists()
+            or User.objects.filter(email__iexact=email).exists()
+        ):
             raise serializers.ValidationError("Bu login band — boshqasini tanlang.")
-        if User.objects.filter(email=cashier_email_from_login(value)).exists():
-            raise serializers.ValidationError("Bu login band — boshqasini tanlang.")
-        return value
+        # To'liq `<slug>@savin.uz` qaytadi — login ham, email ham shu bo'ladi.
+        return email
 
 
 class BusinessSerializer(serializers.ModelSerializer):
@@ -343,6 +358,10 @@ class BusinessSerializer(serializers.ModelSerializer):
         required=False,
     )
     cashiers_count = serializers.SerializerMethodField()
+    # Ish vaqti Business'da emas, Application'da saqlanadi — profil sahifasida
+    # ko'rsatish/tahrirlash uchun shu yerda ochamiz ("HH:MM" ko'rinishida).
+    work_hours_from = serializers.SerializerMethodField()
+    work_hours_to = serializers.SerializerMethodField()
 
     class Meta:
         model = Business
@@ -366,6 +385,8 @@ class BusinessSerializer(serializers.ModelSerializer):
             "full_address",
             "latitude",
             "longitude",
+            "work_hours_from",
+            "work_hours_to",
             "partnership_status",
             "contract_signed",
             "qr_code",
@@ -375,6 +396,15 @@ class BusinessSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["id", "owner", "application", "created_at", "updated_at"]
+
+    def _fmt_time(self, value):
+        return value.strftime("%H:%M") if value else ""
+
+    def get_work_hours_from(self, obj):
+        return self._fmt_time(obj.application.work_hours_from) if obj.application_id else ""
+
+    def get_work_hours_to(self, obj):
+        return self._fmt_time(obj.application.work_hours_to) if obj.application_id else ""
 
     def get_cashiers_count(self, obj):
         return obj.cashiers.filter(is_active=True).count()

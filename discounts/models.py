@@ -45,9 +45,17 @@ class Discount(models.Model):
 
 
 class DiscountChangeRequest(models.Model):
-    """
-    'Chegirmalar' -> 'Foiz o'zgartirish' -> So'rov -> Admin
-    Biznes egasi chegirma foizini o'zgartirishni so'raydi, Admin tasdiqlaydi.
+    """Biznes egasi chegirma o'zgarishini so'raydi -> Admin tasdiqlaydi.
+
+    Uch xil o'zgarish (`action`):
+      * `percent` — shartnomadagi asosiy foizni o'zgartirish (eski oqim);
+      * `create`  — yangi chegirma KARTASINI qo'shish (Chegirmalar sahifasi);
+      * `update`  — mavjud chegirma kartasini tahrirlash.
+
+    Karta so'rovlarida taklif qilingan qiymatlar `category / new_percent /
+    description / new_min_purchase / new_is_active` maydonlarida saqlanadi va
+    admin tasdiqlagach `Discount` modeliga qo'llanadi. Shu vaqtgacha biznes
+    egasi panelida karta KO'RINMAYDI — to'g'ridan-to'g'ri saqlanmaydi.
     """
 
     class Status(models.TextChoices):
@@ -55,9 +63,30 @@ class DiscountChangeRequest(models.Model):
         APPROVED = "approved", "Tasdiqlangan"
         REJECTED = "rejected", "Rad etilgan"
 
+    class Action(models.TextChoices):
+        PERCENT = "percent", "Asosiy foizni o'zgartirish"
+        CREATE = "create", "Yangi chegirma qo'shish"
+        UPDATE = "update", "Chegirmani tahrirlash"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name="discount_requests")
     requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+
+    action = models.CharField(max_length=12, choices=Action.choices, default=Action.PERCENT)
+    # `update` uchun tahrirlanayotgan karta (create'da bo'sh)
+    discount = models.ForeignKey(
+        Discount,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="change_requests",
+    )
+    # Karta so'rovlari uchun taklif qilingan qiymatlar
+    category = models.CharField(max_length=32, blank=True)
+    description = models.CharField(max_length=255, blank=True)
+    new_min_purchase = models.DecimalField(max_digits=12, decimal_places=0, default=0)
+    new_is_active = models.BooleanField(default=True)
+
     old_percent = models.PositiveSmallIntegerField()
     new_percent = models.PositiveSmallIntegerField()
     reason = models.TextField(blank=True)
@@ -76,7 +105,9 @@ class DiscountChangeRequest(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.business.name}: {self.old_percent}% -> {self.new_percent}%"
+        if self.action == self.Action.PERCENT:
+            return f"{self.business.name}: {self.old_percent}% -> {self.new_percent}%"
+        return f"{self.business.name}: {self.get_action_display()} · {self.category} {self.new_percent}%"
 
 
 class DiscountUsage(models.Model):

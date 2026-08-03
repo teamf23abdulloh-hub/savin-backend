@@ -296,13 +296,78 @@ class AdminBusinessStatsView(APIView):
 
 
 class MyBusinessView(generics.RetrieveUpdateAPIView):
-    """Biznes egasi o'z biznes profilini ko'rish/tahrirlash (Profil / Sozlama)."""
+    """Biznes egasi o'z biznes profilini ko'rish / o'zgartirish SO'ROVI.
+
+    GET   — profil ma'lumotlari (ish vaqti bilan).
+    PATCH — o'zgarish SO'ROVI. To'g'ridan saqlanmaydi: admin tasdiqlagach
+            qo'llanadi (biznes egasi ma'lumotlarni o'zboshimcha o'zgartira
+            olmasligi kerak).
+    """
 
     serializer_class = BusinessSerializer
     permission_classes = [IsAuthenticated, IsBusinessOwner]
 
+    # Biznes egasi so'rov qila oladigan (admin tasdiqlaydigan) maydonlar
+    EDITABLE_FIELDS = [
+        "name",
+        "description",
+        "full_address",
+        "phone_number",
+        "email",
+        "work_hours_from",
+        "work_hours_to",
+    ]
+
     def get_object(self):
         return get_object_or_404(Business, owner=self.request.user)
+
+    def update(self, request, *args, **kwargs):
+        from businesses.models import ProfileChangeRequest
+        from businesses.services import profile_request_body
+
+        business = self.get_object()
+
+        # Faqat ruxsat etilgan va HAQIQATAN o'zgargan maydonlarni yig'amiz
+        current = BusinessSerializer(business).data
+        changes = {}
+        for field in self.EDITABLE_FIELDS:
+            if field in request.data:
+                new_val = request.data.get(field)
+                new_str = "" if new_val is None else str(new_val).strip()
+                if new_str != str(current.get(field) or ""):
+                    changes[field] = new_str
+
+        if not changes:
+            return Response({"detail": "O'zgarish yo'q.", "pending": False})
+
+        change_request = ProfileChangeRequest.objects.create(
+            business=business,
+            requested_by=request.user,
+            changes=changes,
+        )
+
+        # Admin panelга bildirishnoma + "So'rovlar" bo'limi uchun
+        from businesses.integrations import notify_admin_panel_business_event
+
+        notify_admin_panel_business_event(
+            business,
+            title=f"{business.name}: profil o'zgartirish so'rovi",
+            body=profile_request_body(changes),
+            extra={
+                "kind": "profile_change",
+                "request_id": str(change_request.id),
+                "old_percent": 0,
+                "new_percent": 0,
+            },
+        )
+        return Response(
+            {
+                "detail": "Profil o'zgarishi so'rovi adminга yuborildi — tasdiqlanishini kuting.",
+                "request_id": str(change_request.id),
+                "pending": True,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 
 class MyBusinessDashboardView(APIView):

@@ -484,6 +484,61 @@ class MobileReferralReviewBridgeView(APIView):
         return Response({"detail": "ok", "status": ref.status})
 
 
+def _unique_redeem_code(now):
+    """Faol (muddati tugamagan) kodlar orasida noyob 4 xonali kod."""
+    import secrets
+
+    from mobileapi.models import RedeemCode
+
+    for _ in range(50):
+        code = f"{secrets.randbelow(10000):04d}"
+        if not RedeemCode.objects.filter(code=code, expires_at__gt=now).exists():
+            return code
+    # Juda kam ehtimol — baribir biror kod qaytaramiz
+    return f"{secrets.randbelow(10000):04d}"
+
+
+def get_or_refresh_redeem_code(user):
+    """Foydalanuvchining joriy 4 xonali kodini qaytaradi (kerak bo'lsa yangilaydi)."""
+    from datetime import timedelta
+
+    from mobileapi.models import RedeemCode
+
+    now = timezone.now()
+    rc = RedeemCode.objects.filter(user=user).first()
+    if rc and rc.expires_at > now:
+        return rc
+
+    code = _unique_redeem_code(now)
+    expires_at = now + timedelta(seconds=RedeemCode.TTL_SECONDS)
+    if rc:
+        rc.code = code
+        rc.expires_at = expires_at
+        rc.save(update_fields=["code", "expires_at", "updated_at"])
+    else:
+        rc = RedeemCode.objects.create(user=user, code=code, expires_at=expires_at)
+    return rc
+
+
+class RedeemCodeView(APIView):
+    """Mijozning joriy 4 xonali kodi (QR ishlamasa kassirга aytiladi).
+
+    Har 5 daqiqada yangilanadi; ilova bu endpointni chaqirib kodni ko'rsatadi.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        rc = get_or_refresh_redeem_code(request.user)
+        return Response(
+            {
+                "code": rc.code,
+                "seconds_left": rc.seconds_left,
+                "ttl": rc.TTL_SECONDS,
+            }
+        )
+
+
 class SmsStatusView(APIView):
     """SMS sozlamalari holati — tashxis uchun.
 

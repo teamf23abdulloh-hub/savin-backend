@@ -49,8 +49,47 @@ def filter_by_date_range(queryset, request, field="used_at"):
 # ==================== BIZNES EGASI: Chegirmalar ====================
 
 
+def _card_request_payload(change_request):
+    """Karta so'rovi uchun admin panelга yuboriladigan tafsilot."""
+    cr = change_request
+    verb = "yangi chegirma qo'shish" if cr.action == cr.Action.CREATE else "chegirmani tahrirlash"
+    body = f"{cr.category} · {cr.new_percent}%"
+    if cr.new_min_purchase:
+        body += f" · min. xarid: {int(cr.new_min_purchase)} so'm"
+    return {
+        "title": f"{cr.business.name}: {verb} so'rovi",
+        "body": body,
+        "extra": {
+            "kind": "discount_card",
+            "request_id": str(cr.id),
+            # Admin kartadagi asosiy foizni O'ZGARTIRMASLIGI uchun 0 —
+            # bu so'rov alohida karta haqida, shartnoma foizi haqida emas.
+            "old_percent": 0,
+            "new_percent": 0,
+            "reason": cr.reason,
+        },
+    }
+
+
+def _notify_admin_card_request(change_request):
+    from businesses.integrations import notify_admin_panel_business_event
+
+    payload = _card_request_payload(change_request)
+    notify_admin_panel_business_event(
+        change_request.business,
+        title=payload["title"],
+        body=payload["body"],
+        extra=payload["extra"],
+    )
+
+
 class MyDiscountListCreateView(generics.ListCreateAPIView):
-    """Biznesning chegirma turlari: ro'yxat / yangi qo'shish (biznes egasi)."""
+    """Biznesning chegirma turlari.
+
+    GET  — mavjud (tasdiqlangan) chegirmalar ro'yxati.
+    POST — yangi chegirma QO'SHISH SO'ROVI. To'g'ridan-to'g'ri saqlanmaydi:
+           admin tasdiqlagach karta paydo bo'ladi.
+    """
 
     serializer_class = DiscountSerializer
     permission_classes = [IsAuthenticated, IsBusinessOwner]
@@ -67,12 +106,40 @@ class MyDiscountListCreateView(generics.ListCreateAPIView):
         ctx["business"] = self._business()
         return ctx
 
-    def perform_create(self, serializer):
-        serializer.save(business=self._business())
+    def create(self, request, *args, **kwargs):
+        business = self._business()
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        change_request = DiscountChangeRequest.objects.create(
+            business=business,
+            requested_by=request.user,
+            action=DiscountChangeRequest.Action.CREATE,
+            category=data.get("category", ""),
+            description=data.get("description", ""),
+            new_percent=data.get("percent", 0),
+            new_min_purchase=data.get("min_purchase", 0) or 0,
+            new_is_active=data.get("is_active", True),
+            old_percent=0,
+        )
+        _notify_admin_card_request(change_request)
+        return Response(
+            {
+                "detail": "So'rov yuborildi. Admin tasdiqlagach chegirma qo'shiladi.",
+                "request_id": str(change_request.id),
+                "pending": True,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 
 class MyDiscountDetailView(generics.RetrieveUpdateDestroyAPIView):
-    """Chegirmani tahrirlash / o'chirish (biznes egasi)."""
+    """Chegirmani tahrirlash (SO'ROV) / o'chirish (biznes egasi).
+
+    PATCH/PUT — tahrirlash SO'ROVI (admin tasdiqlaydi), to'g'ridan saqlanmaydi.
+    DELETE    — o'chirish (bevosita, tasdiq talab qilinmaydi).
+    """
 
     serializer_class = DiscountSerializer
     permission_classes = [IsAuthenticated, IsBusinessOwner]
@@ -87,6 +154,34 @@ class MyDiscountDetailView(generics.RetrieveUpdateDestroyAPIView):
         ctx = super().get_serializer_context()
         ctx["business"] = self._business()
         return ctx
+
+    def update(self, request, *args, **kwargs):
+        discount = self.get_object()
+        serializer = self.get_serializer(discount, data=request.data, partial=kwargs.get("partial", False))
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        change_request = DiscountChangeRequest.objects.create(
+            business=discount.business,
+            requested_by=request.user,
+            action=DiscountChangeRequest.Action.UPDATE,
+            discount=discount,
+            category=data.get("category", discount.category),
+            description=data.get("description", discount.description),
+            new_percent=data.get("percent", discount.percent),
+            new_min_purchase=data.get("min_purchase", discount.min_purchase) or 0,
+            new_is_active=data.get("is_active", discount.is_active),
+            old_percent=discount.percent,
+        )
+        _notify_admin_card_request(change_request)
+        return Response(
+            {
+                "detail": "Tahrirlash so'rovi yuborildi. Admin tasdiqlagach o'zgaradi.",
+                "request_id": str(change_request.id),
+                "pending": True,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 
 class MyDiscountToggleView(APIView):
@@ -288,11 +383,25 @@ def find_customer_by_qr(qr_value):
         customer = User.objects.filter(pk=match.group(0)).first()
         return customer, None
 
-    # 2) Email ko'rinishida bo'lsa
+    # 2) 4 xonali qisqa kod — QR ishlamasa mijoz shu kodni aytadi.
+    #    Faqat FAOL (muddati tugamagan) kod qabul qilinadi.
+    if re.fullmatch(r"\d{4}", value):
+        from mobileapi.models import RedeemCode
+
+        rc = (
+            RedeemCode.objects.filter(code=value, expires_at__gt=timezone.now())
+            .select_related("user")
+            .first()
+        )
+        if rc:
+            return rc.user, None
+        return None, "Kod noto'g'ri yoki muddati tugagan. Mijoz ilovada kodni yangilasin."
+
+    # 3) Email ko'rinishida bo'lsa
     if "@" in value:
         return User.objects.filter(email__iexact=value).first(), None
 
-    # 3) Telefon raqami — QR skanerlanmasa kassir qo'lda kiritadi.
+    # 4) Telefon raqami — QR skanerlanmasa kassir qo'lda kiritadi.
     #    Formatlar har xil bo'lishi mumkin, shu sabab oxirgi 9 raqam bo'yicha.
     digits = re.sub(r"\D", "", value)
     if len(digits) >= 9:
@@ -621,6 +730,54 @@ class AdminDiscountChangeRequestViewSet(viewsets.ReadOnlyModelViewSet):
     filterset_fields = ["status"]
 
 
+def _apply_approved_change(change_request):
+    """Tasdiqlangan so'rovni haqiqiy modelga qo'llaydi.
+
+    Qaytaradi: `(bildirishnoma_sarlavhasi, bildirishnoma_matni)`.
+    """
+    cr = change_request
+    business = cr.business
+
+    if cr.action == DiscountChangeRequest.Action.PERCENT:
+        if business.application:
+            business.application.discount_percent = cr.new_percent
+            business.application.save(update_fields=["discount_percent"])
+        return (
+            "Chegirma so'rovi tasdiqlandi",
+            f"Chegirma foizi {cr.old_percent}% dan {cr.new_percent}% ga o'zgartirildi.",
+        )
+
+    if cr.action == DiscountChangeRequest.Action.CREATE:
+        Discount.objects.update_or_create(
+            business=business,
+            category=cr.category,
+            defaults=dict(
+                description=cr.description,
+                percent=cr.new_percent,
+                min_purchase=cr.new_min_purchase or 0,
+                is_active=cr.new_is_active,
+            ),
+        )
+        return (
+            "Chegirma so'rovi tasdiqlandi",
+            f'"{cr.category}" ({cr.new_percent}%) chegirmasi qo\'shildi.',
+        )
+
+    # UPDATE
+    discount = cr.discount
+    if discount is not None:
+        discount.category = cr.category or discount.category
+        discount.description = cr.description
+        discount.percent = cr.new_percent
+        discount.min_purchase = cr.new_min_purchase or 0
+        discount.is_active = cr.new_is_active
+        discount.save()
+    return (
+        "Chegirma so'rovi tasdiqlandi",
+        f'"{cr.category}" chegirmasi yangilandi ({cr.new_percent}%).',
+    )
+
+
 def apply_discount_review(change_request, action, reviewer=None, reject_reason=""):
     """Chegirma so'rovini tasdiqlash/rad etish — umumiy logika.
 
@@ -628,29 +785,35 @@ def apply_discount_review(change_request, action, reviewer=None, reject_reason="
     va admin panel backendidan keladigan bridge (AdminBridgeDiscountReviewView).
     Ikkala holatda ham biznes egasiga (biznes panelning Bildirishnomalar
     bo'limiga) natija haqida bildirishnoma avtomatik yuboriladi.
+
+    So'rov turi (`action` maydoni) `percent` / `create` / `update` bo'lishi
+    mumkin — tasdiqlanganda mos model (application foizi yoki Discount kartasi)
+    yangilanadi.
     """
     change_request.reviewed_by = reviewer
     change_request.reviewed_at = timezone.now()
+    act = change_request.action
 
     if action == "approve":
         change_request.status = DiscountChangeRequest.Status.APPROVED
-        business = change_request.business
-        if business.application:
-            business.application.discount_percent = change_request.new_percent
-            business.application.save(update_fields=["discount_percent"])
-        notif_title = "Chegirma so'rovi tasdiqlandi"
-        notif_body = (
-            f"Chegirma foizi {change_request.old_percent}% dan "
-            f"{change_request.new_percent}% ga o'zgartirildi."
-        )
+        notif_title, notif_body = _apply_approved_change(change_request)
     else:
         change_request.status = DiscountChangeRequest.Status.REJECTED
-        notif_title = "Chegirma so'rovi rad etildi"
-        notif_body = (
-            f"{change_request.new_percent}% chegirma so'rovingiz admin "
-            "tomonidan rad etildi."
-            + (f" Sabab: {reject_reason}" if reject_reason else "")
-        )
+        if act == DiscountChangeRequest.Action.PERCENT:
+            notif_title = "Chegirma so'rovi rad etildi"
+            notif_body = (
+                f"{change_request.new_percent}% chegirma so'rovingiz admin "
+                "tomonidan rad etildi."
+            )
+        else:
+            verb = "qo'shish" if act == DiscountChangeRequest.Action.CREATE else "tahrirlash"
+            notif_title = "Chegirma so'rovi rad etildi"
+            notif_body = (
+                f'"{change_request.category}" chegirmasini {verb} so\'rovingiz '
+                "admin tomonidan rad etildi."
+            )
+        if reject_reason:
+            notif_body += f" Sabab: {reject_reason}"
 
     change_request.save()
 
