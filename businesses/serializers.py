@@ -340,11 +340,16 @@ class CashierCreateSerializer(serializers.Serializer):
                 "Login kamida 2 ta harfdan iborat bo'lsin (faqat harf yetarli)."
             )
         email = f"{slug}@savin.uz"
+        # Login BUTUN tizim bo'ylab noyob bo'lishi kerak — boshqa biznesning
+        # kassiri bilan bir xil bo'lib qolmasligi uchun barcha kassirlar va
+        # foydalanuvchilar orasidan qidiramiz.
         if (
             Cashier.objects.filter(login__iexact=email).exists()
             or User.objects.filter(email__iexact=email).exists()
         ):
-            raise serializers.ValidationError("Bu login band — boshqasini tanlang.")
+            raise serializers.ValidationError(
+                f"Bunday login allaqachon mavjud ({email}). Boshqa login tanlang."
+            )
         # To'liq `<slug>@savin.uz` qaytadi — login ham, email ham shu bo'ladi.
         return email
 

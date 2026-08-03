@@ -223,3 +223,51 @@ class ProfileChangeApprovalTests(APITestCase):
         self.assertFalse(resp.json()["pending"])
         from businesses.models import ProfileChangeRequest
         self.assertEqual(ProfileChangeRequest.objects.count(), 0)
+
+
+class CashierLoginUniquenessTests(APITestCase):
+    """Kassir login BUTUN tizim bo'ylab noyob — boshqa biznes kassiri bilan
+    bir xil bo'lib qolmasligi kerak; jonli tekshiruv ham ishlashi kerak."""
+
+    def setUp(self):
+        from businesses.models import Business
+        self.cat = Category.objects.create(name="Kafe3", slug="kafe3")
+        self.owner_a = User.objects.create_user(
+            username="a@savin.uz", email="a@savin.uz", password="pass12345",
+            role=User.Role.BUSINESS_OWNER,
+        )
+        self.owner_b = User.objects.create_user(
+            username="b@savin.uz", email="b@savin.uz", password="pass12345",
+            role=User.Role.BUSINESS_OWNER,
+        )
+        self.biz_a = Business.objects.create(owner=self.owner_a, name="A", category=self.cat, is_active=True)
+        self.biz_b = Business.objects.create(owner=self.owner_b, name="B", category=self.cat, is_active=True)
+
+    def _create_cashier(self, owner, login):
+        self.client.force_authenticate(owner)
+        return self.client.post(
+            "/api/v1/my-business/cashiers/",
+            {"full_name": "Kassir", "login": login, "password": "pass12345"},
+            format="json",
+        )
+
+    def test_boshqa_biznesda_bir_xil_login_rad_etiladi(self):
+        r1 = self._create_cashier(self.owner_a, "baxtiyor")
+        self.assertEqual(r1.status_code, 201)
+        # Boshqa biznes egasi xuddi shu loginni yaratmoqchi
+        r2 = self._create_cashier(self.owner_b, "baxtiyor")
+        self.assertEqual(r2.status_code, 400)
+        self.assertIn("login", r2.json())
+        self.assertIn("mavjud", str(r2.json()["login"]).lower())
+
+    def test_check_login_endpoint(self):
+        self._create_cashier(self.owner_a, "baxtiyor")
+        self.client.force_authenticate(self.owner_b)
+        # Band login
+        r = self.client.get("/api/v1/my-business/cashiers/check-login/", {"login": "baxtiyor"})
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.json()["available"])
+        self.assertEqual(r.json()["login"], "baxtiyor@savin.uz")
+        # Bo'sh login
+        r2 = self.client.get("/api/v1/my-business/cashiers/check-login/", {"login": "yangi"})
+        self.assertTrue(r2.json()["available"])

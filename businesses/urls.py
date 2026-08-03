@@ -12,6 +12,7 @@ from businesses.views import (
     ApplicationDetailView,
     ApplicationWizardStep1View,
     ApplicationWizardStepUpdateView,
+    CashierLoginCheckView,
     CashierServiceListView,
     CategoryViewSet,
     MyApplicationsView,
@@ -48,6 +49,7 @@ urlpatterns = [
     # ---- Biznes egasi ----
     path("my-business/", MyBusinessView.as_view(), name="my-business"),
     path("my-business/dashboard/", MyBusinessDashboardView.as_view(), name="my-business-dashboard"),
+    path("my-business/cashiers/check-login/", CashierLoginCheckView.as_view(), name="my-cashier-check-login"),
     path("my-business/cashiers/", MyCashierListCreateView.as_view(), name="my-cashiers"),
     path("my-business/cashiers/<uuid:pk>/", MyCashierDetailView.as_view(), name="my-cashier-detail"),
 

@@ -444,6 +444,31 @@ class CashierServiceListView(generics.ListAPIView):
         return Service.objects.filter(business=cashier.business, is_active=True)
 
 
+class CashierLoginCheckView(APIView):
+    """Kassir login bandligini jonli tekshirish (biznes egasi yozayotganda).
+
+    GET /my-business/cashiers/check-login/?login=baxtiyor
+    -> {"login": "baxtiyor@savin.uz", "available": true/false}
+
+    Login BUTUN tizim bo'ylab tekshiriladi — boshqa biznesning kassiri bilan
+    bir xil bo'lib qolmasligi uchun.
+    """
+
+    permission_classes = [IsAuthenticated, IsBusinessOwner]
+
+    def get(self, request):
+        raw = (request.query_params.get("login") or "").strip()
+        email = cashier_email_from_login(raw)  # "<slug>@savin.uz"
+        slug = email.split("@")[0]
+        if len(slug) < 2:
+            return Response({"login": email, "available": False, "too_short": True})
+        taken = (
+            Cashier.objects.filter(login__iexact=email).exists()
+            or User.objects.filter(email__iexact=email).exists()
+        )
+        return Response({"login": email, "available": not taken})
+
+
 class MyCashierListCreateView(generics.ListCreateAPIView):
     """Kassirlar: Ro'yxat ko'rish / Kassir qo'shish (Email, parol berish)."""
 
