@@ -2,13 +2,16 @@ from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from mobileapi.views import (
+    MobileActivityPingView,
     MobileBusinessListView,
     MobileCategoryListView,
     MobileLoginView,
     MobileMeView,
     MobileMembershipActivateView,
     MobileNotificationListView,
+    MobileNotificationReadAllView,
     MobileRegisterView,
+    MobileReferralOverviewView,
     MobileReferralRequestView,
     MobileReferralReviewBridgeView,
     MobileReferralStatusView,
@@ -39,11 +42,16 @@ urlpatterns = [
 
     # Bildirishnomalar
     path("notifications/", MobileNotificationListView.as_view(), name="mobile-notifications"),
+    path("notifications/read-all/", MobileNotificationReadAllView.as_view(), name="mobile-notifications-read-all"),
 
     # Premium a'zolik (demo)
     path("membership/activate/", MobileMembershipActivateView.as_view(), name="mobile-membership-activate"),
 
-    # Referal mukofot so'rovi
+    # Faollik signali — taklif qilingan do'stning 7 kunlik hisobi uchun
+    path("activity/ping/", MobileActivityPingView.as_view(), name="mobile-activity-ping"),
+
+    # Referal: kod, havola, do'stlar holati va mukofot so'rovi
+    path("referral/overview/", MobileReferralOverviewView.as_view(), name="mobile-referral-overview"),
     path("referral/request/", MobileReferralRequestView.as_view(), name="mobile-referral-request"),
     path("referral/status/", MobileReferralStatusView.as_view(), name="mobile-referral-status"),
     # SMS sozlamalari holati (tashxis)

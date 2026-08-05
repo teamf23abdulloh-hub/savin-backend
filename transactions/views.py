@@ -217,10 +217,14 @@ class TransactionViewSet(viewsets.ModelViewSet):
         date_from = request.query_params.get('date_from')
         date_to = request.query_params.get('date_to')
         
+        # MUHIM: `created_at__date` mahalliy vaqt zonasida (Asia/Tashkent)
+        # hisoblanadi, `timezone.now().date()` esa UTC sanasini beradi —
+        # kechqurun (UTC+5 sabab) ikkalasi farq qilib, bugungi tranzaksiyalar
+        # oralig'idan tushib qolardi. Shuning uchun `localdate()`.
         if not date_from:
-            date_from = (timezone.now() - timedelta(days=30)).date()
+            date_from = timezone.localdate() - timedelta(days=30)
         if not date_to:
-            date_to = timezone.now().date()
+            date_to = timezone.localdate()
         
         queryset = queryset.filter(
             created_at__date__gte=date_from,
@@ -262,7 +266,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
         
         data = []
         for i in range(days, -1, -1):
-            date = timezone.now().date() - timedelta(days=i)
+            date = timezone.localdate() - timedelta(days=i)
             day_data = queryset.filter(created_at__date=date).aggregate(
                 count=Count('id'),
                 total=Sum('final_price'),
@@ -324,8 +328,8 @@ class TransactionViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'])
     def today(self, request):
-        """Bugun qilingan tranzaksiyalar"""
-        today = timezone.now().date()
+        """Bugun qilingan tranzaksiyalar (mahalliy sana bo'yicha)"""
+        today = timezone.localdate()
         queryset = self.get_queryset().filter(
             created_at__date=today,
             status='completed'
@@ -370,7 +374,7 @@ class DailyStatViewSet(viewsets.ReadOnlyModelViewSet):
         if request.user.role not in ['admin', 'superadmin']:
             raise PermissionDenied("Faqat admin")
         
-        yesterday = timezone.now().date() - timedelta(days=1)
+        yesterday = timezone.localdate() - timedelta(days=1)
         
         for business in Business.objects.all():
             transactions = Transaction.objects.filter(

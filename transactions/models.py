@@ -31,12 +31,25 @@ class Transaction(models.Model):
     )
     
     # Customer Information
+    #
+    # `customer` — mijozning HAQIQIY hisobi. Kassir QR/4 xonali kod orqali
+    # mijozni topgani uchun uni aniq bog'lab qo'yish mumkin. Ilgari faqat
+    # `customer_phone` bor edi va kassir paneli uni yubormasdi — natijada
+    # mobil ilova "tejagan summa"ni hech qachon topa olmasdi (har doim 0).
+    customer = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transactions_as_customer',
+        verbose_name="Mijoz (hisob)"
+    )
     customer_name = models.CharField(
         max_length=200,
         verbose_name="Mijoz nomi"
     )
     customer_phone = models.CharField(
-        max_length=20, 
+        max_length=20,
         blank=True,
         verbose_name="Mijoz telefoni"
     )
@@ -109,6 +122,7 @@ class Transaction(models.Model):
         indexes = [
             models.Index(fields=['business', '-created_at']),
             models.Index(fields=['cashier', '-created_at']),
+            models.Index(fields=['customer', '-created_at']),
             models.Index(fields=['status']),
         ]
         verbose_name = "Tranzaksiya"

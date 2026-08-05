@@ -24,7 +24,15 @@ from mobileapi.serializers import (
     MobileNotificationSerializer,
     MobileUserSerializer,
 )
-from mobileapi.services import ReferralReviewError, review_referral_request
+from mobileapi.services import (
+    ReferralError,
+    ReferralReviewError,
+    attach_referral,
+    create_reward_request,
+    record_activity,
+    referral_overview,
+    review_referral_request,
+)
 from users.models import Membership, User
 
 # SMS tasdiqlash `mobileapi/sms.py` da: har safar tasodifiy kod yaratiladi,
@@ -92,6 +100,11 @@ class MobileRegisterView(APIView):
             changed = True
         if changed:
             user.save(update_fields=["first_name", "last_name"])
+
+        # Taklif havolasi orqali kelgan bo'lsa — do'stni taklif qilgan
+        # kishiga biriktiramiz (faqat yangi foydalanuvchi uchun).
+        if created:
+            attach_referral(user, request.data.get("referral_code"))
 
         # Kodni tez-tez qayta so'rashdan himoya
         wait = sms.seconds_until_resend(phone)
@@ -177,8 +190,8 @@ class MobileLoginView(APIView):
         if user.is_blocked:
             return Response({"detail": "Foydalanuvchi bloklangan."}, status=403)
 
-        user.last_seen_at = timezone.now()
-        user.save(update_fields=["last_seen_at"])
+        # Kirish ham "faollik" hisoblanadi (referal 7 kunlik hisobi uchun)
+        record_activity(user)
 
         tokens = _tokens_for(user)
         return Response(
@@ -295,6 +308,41 @@ class MobileNotificationListView(APIView):
         return Response(MobileNotificationSerializer(qs, many=True).data)
 
 
+class MobileNotificationReadAllView(APIView):
+    """Barcha bildirishnomalarni o'qilgan deb belgilash (Xabarlar ekrani)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        updated = CustomerNotification.objects.filter(
+            user=request.user, is_read=False
+        ).update(is_read=True)
+        return Response({"updated": updated})
+
+
+def customer_transactions(user):
+    """Mijozning tugallangan tranzaksiyalari.
+
+    Kassir chegirma qo'llaganda tranzaksiya mijoz hisobiga (`customer`)
+    bog'lanadi. Eski yozuvlarda bu maydon bo'sh — ular telefon raqami
+    bo'yicha topiladi. Raqam formati har xil bo'lishi mumkin
+    ("+998 90 123 45 67", "998901234567"), shuning uchun oxirgi 9 raqam
+    bo'yicha solishtiramiz — aks holda tejagan summa ko'rinmay qolardi.
+    """
+    from django.db.models import Q
+
+    phone = user.phone_number or ""
+    tail = re.sub(r"\D", "", phone)[-9:]
+
+    condition = Q(customer=user)
+    if phone:
+        condition |= Q(customer_phone=phone)
+    if len(tail) == 9:
+        condition |= Q(customer_phone__endswith=tail)
+
+    return Transaction.objects.filter(condition, status="completed")
+
+
 def _tx_to_mobile(tx):
     """Transaction -> mobil ilova kutgan shakl."""
     return {
@@ -318,9 +366,8 @@ class MobileTransactionView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        phone = request.user.phone_number or ""
         qs = (
-            Transaction.objects.filter(customer_phone=phone, status="completed")
+            customer_transactions(request.user)
             .select_related("business", "business__category")
             .order_by("-created_at")
         )
@@ -347,6 +394,7 @@ class MobileTransactionView(APIView):
 
         tx = Transaction.objects.create(
             business=business,
+            customer=user,
             customer_name=user.get_full_name() or user.username,
             customer_phone=user.phone_number or "",
             service_name="Chegirma",
@@ -364,8 +412,7 @@ class MobileTransactionStatsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        phone = request.user.phone_number or ""
-        qs = Transaction.objects.filter(customer_phone=phone, status="completed").select_related(
+        qs = customer_transactions(request.user).select_related(
             "business", "business__category"
         )
 
@@ -397,25 +444,58 @@ class MobileTransactionStatsView(APIView):
         )
 
 
-class MobileReferralRequestView(APIView):
-    """Mijoz 3 do'st taklif qilgach mukofot so'rovini yuboradi.
+class MobileActivityPingView(APIView):
+    """Ilova ochilganda yuboriladigan "men faolman" signali.
 
-    So'rov saqlanadi (admin panelning 'So'rovlar' bo'limi uchun). Admin
-    tasdiqlash/rad etish oqimi keyingi bosqichda admin backend + panel bilan
-    to'liq ulanadi.
+    Taklif qilingan do'st bir hafta davomida ilovaga kirib turishi kerak —
+    faollik kunlari shu yerda sanaladi (kunига bir marta).
     """
 
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        invited = int(request.data.get("invited_count", 3) or 3)
-        req = ReferralRequest.objects.create(
-            customer=request.user,
-            invited_count=invited,
+        invite = record_activity(request.user)
+        if invite is None:
+            return Response({"ok": True, "invited": False})
+        return Response(
+            {
+                "ok": True,
+                "invited": True,
+                "status": invite.status,
+                "active_days": invite.active_days,
+                "days_left": invite.days_left,
+            }
         )
-        # Admin panelga (savin-backend) uzatamiz — best-effort (xato bo'lsa
-        # ham mijozga so'rov yuborildi deb ko'rsatamiz).
-        _notify_admin_referral(request.user, req, invited)
+
+
+class MobileReferralOverviewView(APIView):
+    """Referal ekrani: taklif kodi, havola, do'stlar holati va progress."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response(referral_overview(request.user))
+
+
+class MobileReferralRequestView(APIView):
+    """Mijoz 3 ta FAOL do'st yig'gach 1 oylik obuna arizasini yuboradi.
+
+    "Faol" — do'st ro'yxatdan o'tib, bir hafta davomida ilovaga kirib
+    turgan bo'lishi kerak. Ariza admin panelning qo'ng'irog'ida va
+    foydalanuvchi sahifasida ko'rinadi; admin tasdiqlasa a'zolik +1 oy.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            req = create_reward_request(request.user)
+        except ReferralError as exc:
+            return Response({"detail": str(exc)}, status=400)
+
+        # Admin panelga uzatamiz — best-effort (xato bo'lsa ham mijozga
+        # so'rov yuborildi deb ko'rsatamiz).
+        _notify_admin_referral(request.user, req, req.invited_count)
         return Response(
             {"detail": "So'rov yuborildi.", "id": str(req.id), "status": req.status},
             status=status.HTTP_201_CREATED,

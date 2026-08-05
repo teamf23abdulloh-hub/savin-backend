@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Transaction, TransactionLog, DailyTransactionStat
+from users.models import User
 from users.serializers import UserBasicSerializer
 
 
@@ -96,11 +97,19 @@ class TransactionDetailSerializer(serializers.ModelSerializer):
 
 class TransactionCreateUpdateSerializer(serializers.ModelSerializer):
     """Yangi tranzaksiya yaratish/tahrirlash"""
-    
+
+    # Kassir QR (yoki 4 xonali kod) orqali mijozni aniqlagani uchun uni
+    # to'g'ridan-to'g'ri bog'lab qo'yamiz — mobil ilova "tejagan summa"ni
+    # aynan shu bog'lanish orqali topadi.
+    customer = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(), required=False, allow_null=True
+    )
+
     class Meta:
         model = Transaction
         fields = [
             'id',
+            'customer',
             'customer_name',
             'customer_phone',
             'service_name',

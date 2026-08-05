@@ -401,17 +401,16 @@ def find_customer_by_qr(qr_value):
     if "@" in value:
         return User.objects.filter(email__iexact=value).first(), None
 
-    # 4) Telefon raqami — QR skanerlanmasa kassir qo'lda kiritadi.
-    #    Formatlar har xil bo'lishi mumkin, shu sabab oxirgi 9 raqam bo'yicha.
-    digits = re.sub(r"\D", "", value)
-    if len(digits) >= 9:
-        tail = digits[-9:]
-        customer = (
-            User.objects.filter(
-                role=User.Role.CUSTOMER, phone_number__endswith=tail
-            ).first()
+    # 4) Boshqa raqamlar QABUL QILINMAYDI.
+    #    Ilgari bu yerda telefon raqami bo'yicha qidiruv bor edi — kassir
+    #    mijozning raqamini kiritib chegirma bera olardi. Bu xavfsiz emas
+    #    (raqam o'zgarmaydi va uni har kim bilishi mumkin), shuning uchun
+    #    endi faqat har 5 daqiqada yangilanadigan 4 xonali kod ishlaydi.
+    if re.fullmatch(r"[\d\s+()\-]+", value):
+        return None, (
+            "Faqat 4 xonali kod qabul qilinadi. Mijoz ilovadagi QR "
+            "ekranidan joriy kodni aytsin (kod har 5 daqiqada yangilanadi)."
         )
-        return customer, None
 
     return None, None
 

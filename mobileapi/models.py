@@ -36,6 +36,81 @@ class ReferralRequest(models.Model):
         return f"ReferralRequest<{self.customer_id}:{self.status}>"
 
 
+class ReferralCode(models.Model):
+    """Foydalanuvchining doimiy taklif kodi (deep-link uchun ham).
+
+    Kod havolaga qo'shiladi: `https://savin.uz/i/<KOD>`. Do'st havolani
+    bosganda ilova ochiladi (ilova bo'lmasa Play Marketga tushadi) va
+    ro'yxatdan o'tganda taklif avtomatik biriktiriladi.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="referral_code_obj",
+    )
+    code = models.CharField(max_length=16, unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.code} -> {self.user_id}"
+
+
+class ReferralInvite(models.Model):
+    """Taklif qilingan do'st va uning "haqiqiy taklif" bo'lish jarayoni.
+
+    Do'st ro'yxatdan o'tishi YETARLI EMAS — taklif to'liq hisoblanishi uchun
+    u bir hafta davomida ilovaga muntazam kirib turishi kerak. Ilova har
+    ochilganda "ping" yuboradi; kunига bir marta `active_days` oshadi.
+    7 kunga yetganda taklif "Aktiv" bo'ladi va mukofot hisobiga kiradi.
+    """
+
+    ACTIVE_DAYS_REQUIRED = 7
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Kutilmoqda"
+        ACTIVE = "active", "Aktiv"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    inviter = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="referrals_sent",
+    )
+    # Bir foydalanuvchini faqat BITTA kishi taklif qila oladi
+    invitee = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="referral_source",
+    )
+    code_used = models.CharField(max_length=16, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    active_days = models.PositiveSmallIntegerField(default=0)
+    last_active_date = models.DateField(blank=True, null=True)
+    activated_at = models.DateTimeField(blank=True, null=True)
+    # Mukofot so'roviga (3 ta faol do'st) kiritilgan bo'lsa — qaysi so'rovga
+    reward_request = models.ForeignKey(
+        "mobileapi.ReferralRequest",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="invites",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["inviter", "status"])]
+
+    def __str__(self):
+        return f"{self.inviter_id} -> {self.invitee_id} ({self.status})"
+
+    @property
+    def days_left(self):
+        """Do'st faollashishi uchun yana necha kun kirishi kerak."""
+        return max(0, self.ACTIVE_DAYS_REQUIRED - self.active_days)
+
+
 class CustomerNotification(models.Model):
     """Mijozga (mobil ilova foydalanuvchisiga) yuboriladigan bildirishnoma."""
 

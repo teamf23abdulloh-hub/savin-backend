@@ -143,9 +143,15 @@ def receive_referral_request(payload):
             invited_count=invited,
         ),
     )
+    # `member` MAJBURIY: qo'ng'iroqdagi bildirishnoma bosilganda admin
+    # to'g'ridan-to'g'ri shu foydalanuvchining sahifasiga tushadi — ariza
+    # o'sha yerda (foydalanuvchi ma'lumotlari yonida) tasdiqlash/rad etish
+    # tugmalari bilan ko'rinadi. Ilgari bog'lanmagani uchun bildirishnoma
+    # bosilganda hech qayerga o'tmasdi.
     AdminAlert.objects.create(
         kind=AdminAlertKind.REFERRAL_REQUEST,
         title="Yangi referal mukofot so'rovi",
-        body=f"{member_name} {invited} ta do'st taklif qildi — mukofot so'rayapti",
+        body=f"{member_name} {invited} ta do'st taklif qildi — 1 oylik obuna so'rayapti",
+        member=member,
     )
     return req

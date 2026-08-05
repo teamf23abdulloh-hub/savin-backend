@@ -42,3 +42,26 @@ def update_daily_stats(sender, instance, created, **kwargs):
             'average_discount_percent': stats['avg_discount'] or 0,
         }
     )
+
+
+@receiver(post_save, sender=Transaction)
+def notify_customer_about_discount(sender, instance, created, **kwargs):
+    """Kassir chegirma qo'llaganda mijozga ilovada bildirishnoma chiqadi.
+
+    Dizayndagi "Chegirma qo'llanildi! — 17 500 so'm tejagansiz" xabari
+    shu yerdan tug'iladi. Faqat mijoz hisobiga bog'langan tranzaksiyalar
+    uchun (kassir QR/4 xonali kod orqali mijozni aniqlagan bo'lsa).
+    """
+    if not created or instance.status != 'completed' or not instance.customer_id:
+        return
+
+    from mobileapi.models import CustomerNotification
+
+    saved = int(instance.discount_amount or 0)
+    business_name = instance.business.name if instance.business_id else "Savin hamkori"
+    CustomerNotification.objects.create(
+        user_id=instance.customer_id,
+        title="Chegirma qo'llanildi!",
+        body=f"{business_name}da {saved:,} so'm tejagansiz.".replace(",", " "),
+        kind=CustomerNotification.Kind.DISCOUNT,
+    )
