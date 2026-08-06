@@ -109,10 +109,26 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 raise PermissionDenied(
                     "Sizga hech qanday biznes biriktirilmagan yoki kassir profilingiz faol emas"
                 )
+            extra = {}
+            # Panel mijoz hisobini yubormagan bo'lsa (eski/keshlangan
+            # frontend), oxirgi skanerlangan mijozga bog'laymiz. Aks holda
+            # tranzaksiya hech kimga tegishli bo'lmay qolar va mijoz
+            # ilovasida "tejagan summa" ko'rinmasdi.
+            if not serializer.validated_data.get('customer'):
+                cashier_profile = Cashier.objects.filter(
+                    user=user, is_active=True
+                ).select_related('last_scanned_customer').first()
+                recent = cashier_profile.recent_scanned_customer() if cashier_profile else None
+                if recent is not None:
+                    extra['customer'] = recent
+                    if not serializer.validated_data.get('customer_phone'):
+                        extra['customer_phone'] = recent.phone_number or ''
+
             serializer.save(
                 business=business,
                 cashier=user,
-                status='completed'
+                status='completed',
+                **extra,
             )
             # Log yaratish
             transaction = serializer.instance

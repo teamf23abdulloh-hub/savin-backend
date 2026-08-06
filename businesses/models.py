@@ -280,6 +280,35 @@ class Cashier(models.Model):
     is_active = models.BooleanField(default=True)
     added_at = models.DateTimeField(auto_now_add=True)
 
+    # Oxirgi skanerlangan mijoz — chegirma tranzaksiyasini mijoz hisobiga
+    # bog'lash uchun zaxira yo'l. Kassir paneli mijoz ID sini yuborishi
+    # kerak, lekin brauzerda eski (keshlangan) versiya ochilib qolsa u
+    # yuborilmaydi va mijoz ilovasida "tejagan summa" ko'rinmay qolardi.
+    # Panelda skanerlashdan keyin darhol tranzaksiya yaratilgani uchun bu
+    # bog'lanish ishonchli (qisqa vaqt oynasi bilan cheklangan).
+    last_scanned_customer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="+",
+    )
+    last_scanned_at = models.DateTimeField(blank=True, null=True)
+
+    #: Oxirgi skanerlash necha soniya davomida amal qiladi
+    LAST_SCAN_TTL_SECONDS = 15 * 60
+
+    def recent_scanned_customer(self):
+        """Yaqinda skanerlangan mijoz (muddati o'tmagan bo'lsa)."""
+        from django.utils import timezone
+
+        if not self.last_scanned_customer_id or not self.last_scanned_at:
+            return None
+        age = (timezone.now() - self.last_scanned_at).total_seconds()
+        if age > self.LAST_SCAN_TTL_SECONDS:
+            return None
+        return self.last_scanned_customer
+
     def __str__(self):
         return f"{self.full_name} @ {self.business.name}"
 

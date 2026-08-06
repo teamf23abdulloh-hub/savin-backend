@@ -303,7 +303,26 @@ class CashierSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "added_at", "business", "user", "login"]
 
     def get_scans_count(self, obj):
-        return obj.discount_usages.count()
+        """Kassir nechta marta chegirma qo'llagani.
+
+        MUHIM: kassir paneli tranzaksiyani `transactions.Transaction` ga
+        yozadi, `DiscountUsage` ga EMAS. Shuning uchun faqat
+        `discount_usages` bo'yicha sanash har doim 0 qaytarardi — panelda
+        har bir kassir "0 Skaner" bo'lib ko'rinardi.
+
+        Ikkala manba ham qo'shiladi: ular bir-birini takrorlamaydi
+        (panel Transaction yozadi, eski/seed ma'lumot DiscountUsage'da).
+        """
+        from transactions.models import Transaction
+
+        count = obj.discount_usages.count()
+        if obj.user_id:
+            count += Transaction.objects.filter(
+                cashier_id=obj.user_id,
+                business_id=obj.business_id,
+                status="completed",
+            ).count()
+        return count
 
 
 def cashier_email_from_login(login):

@@ -14,7 +14,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from businesses.models import Business, BusinessType, Category
+from businesses.models import Business, BusinessType, Cashier, Category
 from mobileapi.models import ReferralInvite, ReferralRequest
 from mobileapi.services import (
     ReferralError,
@@ -256,6 +256,103 @@ class CashierDiscountVisibleToCustomerTests(TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(len(res.data), 1)
         self.assertEqual(res.data[0]["saved_amount"], 20000)
+
+    def test_full_cashier_flow_via_api(self):
+        """Kassir panelidagi HAQIQIY oqim: QR skanerlash -> chegirma qo'llash
+        -> mijoz ilovasida tejagan summa ko'rinishi."""
+        cashier_user = User.objects.create_user(
+            username="kassir",
+            email="kassir@biznes.uz",
+            password="x",
+            role=User.Role.CASHIER,
+        )
+        Cashier.objects.create(
+            business=self.business, user=cashier_user, full_name="Kassir User"
+        )
+
+        cashier_client = APIClient()
+        cashier_client.force_authenticate(user=cashier_user)
+
+        # 1) QR skanerlash — mijoz topiladi
+        scan = cashier_client.post(
+            "/api/v1/cashier/scan-qr/",
+            {"qr_code": str(self.customer.id)},
+            format="json",
+        )
+        self.assertEqual(scan.status_code, 200, scan.data)
+        customer_id = scan.data["id"]
+
+        # 2) Chegirma qo'llash — kassir paneli aynan shu payload'ni yuboradi
+        self.assertEqual(str(customer_id), str(self.customer.id))
+        created = cashier_client.post(
+            "/api/v1/transactions/",
+            {
+                "customer": str(customer_id),
+                "customer_name": scan.data["full_name"],
+                "customer_phone": scan.data["phone_number"],
+                "service_name": "Soch olish",
+                "service_category": "Barber",
+                "base_price": 100000,
+                "discount_percent": 20,
+                "notes": "",
+            },
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+
+        # 3) Mijoz ilovasida tejagan summa ko'rinadi
+        stats = self.client.get("/api/v1/mobile/transactions/stats/")
+        self.assertEqual(stats.data["saved_all_time"], 20000, stats.data)
+        self.assertEqual(stats.data["visits"], 1)
+
+        # 4) Biznes panelidagi "Kassirlar" bo'limida skaner soni 1 bo'ladi
+        owner_client = APIClient()
+        owner_client.force_authenticate(user=self.business.owner)
+        cashiers = owner_client.get("/api/v1/my-business/cashiers/")
+        self.assertEqual(cashiers.status_code, 200, cashiers.data)
+        rows = (
+            cashiers.data["results"]
+            if isinstance(cashiers.data, dict)
+            else cashiers.data
+        )
+        self.assertEqual(rows[0]["scans_count"], 1, rows)
+
+    def test_old_panel_without_customer_id_still_links_via_last_scan(self):
+        """Eski (keshlangan) panel mijoz ID sini yubormasa ham, oxirgi
+        skanerlangan mijozga bog'lanadi — tejagan summa yo'qolmaydi."""
+        cashier_user = User.objects.create_user(
+            username="kassir2",
+            email="kassir2@biznes.uz",
+            password="x",
+            role=User.Role.CASHIER,
+        )
+        Cashier.objects.create(
+            business=self.business, user=cashier_user, full_name="Kassir 2"
+        )
+        cashier_client = APIClient()
+        cashier_client.force_authenticate(user=cashier_user)
+
+        cashier_client.post(
+            "/api/v1/cashier/scan-qr/",
+            {"qr_code": str(self.customer.id)},
+            format="json",
+        )
+        # Eski panel: `customer` ham, `customer_phone` ham yuborilmaydi
+        created = cashier_client.post(
+            "/api/v1/transactions/",
+            {
+                "customer_name": "Aziz",
+                "customer_phone": "",
+                "service_name": "Soch olish",
+                "base_price": 50000,
+                "discount_percent": 20,
+            },
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+
+        stats = self.client.get("/api/v1/mobile/transactions/stats/")
+        self.assertEqual(stats.data["saved_all_time"], 10000, stats.data)
 
     def test_customer_gets_notification_about_discount(self):
         self._tx(customer=self.customer, customer_name="Aziz")

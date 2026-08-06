@@ -639,6 +639,12 @@ class CashierScanQrView(APIView):
                 {"detail": "Bu mijoz bloklangan."}, status=status.HTTP_400_BAD_REQUEST
             )
 
+        # Skanerlangan mijozni eslab qolamiz: keyingi tranzaksiya uning
+        # hisobiga bog'lanadi (panel mijoz ID sini yubormasa ham).
+        cashier.last_scanned_customer = customer
+        cashier.last_scanned_at = timezone.now()
+        cashier.save(update_fields=["last_scanned_customer", "last_scanned_at"])
+
         business = cashier.business
         percent = (
             business.application.discount_percent if business.application else 0
